@@ -172,6 +172,7 @@ qt_add_qml_module(basecamp_icons_qml
     OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/Basecamp/Icons
     QML_FILES
         Basecamp/Icons/BasecampIcons.qml
+        Basecamp/Icons/BasecampLogo.qml
     RESOURCES
         Basecamp/Icons/logos-lambda.svg
         Basecamp/Icons/dashboard.svg

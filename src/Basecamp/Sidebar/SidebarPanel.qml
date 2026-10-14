@@ -60,12 +60,11 @@ Control {
     contentItem: ColumnLayout {
         spacing: Theme.spacing.large
 
-        Image {
-            // The Logos λ, as on logos.co (20 × 26 viewBox).
+        BasecampLogo {
+            // The Logos λ, as on logos.co (20 × 26 viewBox), in brandMark.
             Layout.preferredWidth: 19
             Layout.preferredHeight: 25
             Layout.alignment: Qt.AlignHCenter
-            source: BasecampIcons.logo
             sourceSize: Qt.size(38, 50)   // 2× the drawn size, sharp on HiDPI
         }
 

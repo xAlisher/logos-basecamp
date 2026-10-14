@@ -380,7 +380,7 @@ Item {
         onClicked: d.typeFilter = chip.active ? "" : chip.filterValue
 
         background: Rectangle {
-            radius: width / 2
+            radius: width / 2 * Theme.spacing.roundness
             color: chip.active     ? Theme.palette.accentOrange
                  : chip.isActive   ? Theme.palette.surfaceInteractiveHover
                                    : Theme.palette.surface
@@ -515,7 +515,7 @@ Item {
         bottomPadding: card.topPadding
 
         background: Rectangle {
-            radius: Math.round(24 * card.scaleFactor)
+            radius: Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
             color: card.isActive ? Theme.palette.surfaceInteractiveHover
                                  : Theme.palette.backgroundSecondary
         }
@@ -527,7 +527,7 @@ Item {
                 Layout.preferredWidth: card.chipSize
                 Layout.preferredHeight: card.chipSize
                 Layout.alignment: Qt.AlignVCenter
-                radius: width / 2
+                radius: width / 2 * Theme.spacing.roundness
                 // Hover matches the sidebar's circle buttons: accent fill, dark glyph.
                 color: card.isActive ? Theme.palette.accentOrange : Theme.palette.surface
 

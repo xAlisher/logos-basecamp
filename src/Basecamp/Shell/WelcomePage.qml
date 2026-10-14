@@ -392,7 +392,7 @@ Item {
                 width: d.filterIconSize
                 height: d.filterIconSize
                 source: chip.iconSource
-                color: chip.active ? Theme.palette.backgroundBlack
+                color: chip.active ? Theme.palette.accentForeground
                                    : Theme.palette.textTertiary
             }
         }

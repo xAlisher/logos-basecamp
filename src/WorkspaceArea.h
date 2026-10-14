@@ -73,6 +73,8 @@ protected:
 private:
     void wireWelcomePage(QObject* root);
     void customizeTabBarStyle(QTabBar* tabBar);
+    void applyTabBarStyleSheet(QTabBar* tabBar);
+    void applyThemeColors();
     void installTabBarCloseButtons(QTabBar* tabBar);
     void insetTabBarGeometry(QTabBar* tabBar, int insetPx);
     void styleAllTabBars();

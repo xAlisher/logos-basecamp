@@ -52,7 +52,8 @@ Control {
         readonly property int systemTitleBarPadding: Qt.platform.os === "osx" ? 30: 0
     }
 
-    background: Rectangle {
+    background: LogosSurface {
+        slot: "sidebar"
         radius: Theme.spacing.radiusXlarge
         color: Theme.palette.backgroundSecondary
     }

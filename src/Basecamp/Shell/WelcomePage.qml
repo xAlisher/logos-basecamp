@@ -15,9 +15,10 @@ Item {
 
     // Paint our own background so the page follows the active theme rather
     // than the host widget's hardcoded clear colour.
-    Rectangle {
+    LogosSurface {
         anchors.fill: parent
         z: -1
+        slot: "workspace"
         color: Theme.palette.background
     }
 
@@ -379,7 +380,8 @@ Item {
 
         onClicked: d.typeFilter = chip.active ? "" : chip.filterValue
 
-        background: Rectangle {
+        background: LogosSurface {
+            slot: chip.active ? "accent" : ""
             radius: width / 2 * Theme.spacing.roundness
             color: chip.active     ? Theme.palette.accentOrange
                  : chip.isActive   ? Theme.palette.surfaceInteractiveHover
@@ -523,10 +525,11 @@ Item {
         contentItem: RowLayout {
             spacing: card.contentGap
 
-            Rectangle {
+            LogosSurface {
                 Layout.preferredWidth: card.chipSize
                 Layout.preferredHeight: card.chipSize
                 Layout.alignment: Qt.AlignVCenter
+                slot: card.isActive ? "accent" : ""
                 radius: width / 2 * Theme.spacing.roundness
                 // Hover matches the sidebar's circle buttons: accent fill, dark glyph.
                 color: card.isActive ? Theme.palette.accentOrange : Theme.palette.surface

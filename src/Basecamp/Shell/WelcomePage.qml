@@ -516,10 +516,20 @@ Item {
         topPadding: Math.round(23 * card.scaleFactor)
         bottomPadding: card.topPadding
 
-        background: Rectangle {
-            radius: Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
-            color: card.isActive ? Theme.palette.surfaceInteractiveHover
-                                 : Theme.palette.backgroundSecondary
+        background: Item {
+            LogosGlow {
+                anchors.fill: parent
+                radius: cardBg.radius
+                active: card.hovered
+            }
+
+            Rectangle {
+                id: cardBg
+                anchors.fill: parent
+                radius: Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
+                color: card.isActive ? Theme.palette.surfaceInteractiveHover
+                                     : Theme.palette.backgroundSecondary
+            }
         }
 
         contentItem: RowLayout {

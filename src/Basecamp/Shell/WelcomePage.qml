@@ -523,12 +523,21 @@ Item {
                 active: card.hovered
             }
 
-            Rectangle {
+            LogosSurface {
                 id: cardBg
                 anchors.fill: parent
+                slot: "card"
                 radius: Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
                 color: card.isActive ? Theme.palette.surfaceInteractiveHover
                                      : Theme.palette.backgroundSecondary
+
+                // With a card gradient, hover is a light wash over it.
+                Rectangle {
+                    anchors.fill: parent
+                    radius: parent.radius
+                    visible: cardBg.hasGradient
+                    color: Qt.rgba(1, 1, 1, card.isActive ? 0.06 : 0)
+                }
             }
         }
 

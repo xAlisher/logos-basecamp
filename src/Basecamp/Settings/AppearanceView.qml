@@ -142,6 +142,37 @@ Item {
                 }
             }
 
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+
+                LogosText {
+                    text: qsTr("Density")
+                    font.pixelSize: Theme.typography.primaryText
+                    font.weight: Theme.typography.weightMedium
+                    color: Theme.palette.text
+                }
+
+                // "" follows the theme; the others are the user's own choice.
+                LogosComboBox {
+                    id: densityCombo
+                    objectName: "appearance.densityCombo"
+                    Layout.preferredWidth: 360
+                    readonly property var values: ["", "compact", "comfortable", "touch"]
+                    model: [qsTr("Theme default"), qsTr("Compact"), qsTr("Comfortable"),
+                            qsTr("Touch (larger targets)")]
+                    currentIndex: Math.max(0, values.indexOf(Theme.settings.density))
+                    onActivated: index => Theme.setDensity(values[index])
+                }
+
+                LogosText {
+                    Layout.fillWidth: true
+                    text: qsTr("Using: %1").arg(Theme.density)
+                    font.pixelSize: Theme.typography.secondaryText
+                    color: Theme.palette.textTertiary
+                }
+            }
+
             LogosNotice {
                 objectName: "appearance.restartNotice"
                 Layout.fillWidth: true

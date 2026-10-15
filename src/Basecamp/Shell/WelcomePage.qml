@@ -1,4 +1,5 @@
 import QtQuick
+import QtQuick.Effects
 import QtQuick.Layouts
 
 import Logos.Theme
@@ -91,7 +92,6 @@ Item {
             + (typeFilter !== "ui_qml" ? packagesProxy.visibleCount : 0) === 0
 
         readonly property int greetingToSearch: 40
-        readonly property int searchFieldHeight: 54
         readonly property int filterButtonSize: 50
         readonly property int filterIconSize: 28
         readonly property real cardScale: 1.0
@@ -186,8 +186,8 @@ Item {
                             objectName: "welcomePage.search"
                             focus: true
                             Layout.fillWidth: true
-                            Layout.preferredHeight: d.searchFieldHeight
-                            Layout.maximumHeight: d.searchFieldHeight
+                            Layout.preferredHeight: Theme.components.search.height
+                            Layout.maximumHeight: Theme.components.search.height
                             placeholderText: qsTr("Search...")
                             shortcutHint: searchShortcut.nativeText
                         }
@@ -523,11 +523,26 @@ Item {
                 active: card.hovered
             }
 
+            // Theme card shadow (components.card), drawn under the card.
+            RectangularShadow {
+                anchors.fill: cardBg
+                radius: cardBg.radius
+                visible: Theme.components.card.shadowOpacity > 0
+                color: Theme.components.card.shadowColor
+                opacity: Theme.components.card.shadowOpacity
+                blur: Theme.components.card.shadowBlur
+                offset: Qt.vector2d(0, Theme.components.card.shadowOffsetY)
+            }
+
             LogosSurface {
                 id: cardBg
                 anchors.fill: parent
                 slot: "card"
-                radius: Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
+                borderWidth: Theme.components.card.borderWidth
+                borderColor: Theme.palette.borderSubtle
+                radius: Theme.components.card.radius >= 0
+                        ? Theme.components.card.radius
+                        : Math.round(24 * card.scaleFactor * Theme.spacing.roundness)
                 color: card.isActive ? Theme.palette.surfaceInteractiveHover
                                      : Theme.palette.backgroundSecondary
 

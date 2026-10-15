@@ -61,7 +61,7 @@ Item {
                 Theme.setTheme(r.id)
                 d.resultSeverity = LogosNotice.Success
                 d.resultTitle = r.assets
-                    ? qsTr("Installed “%1” with %2 icons").arg(r.name).arg(r.assets)
+                    ? qsTr("Installed “%1” with %2 files").arg(r.name).arg(r.assets)
                     : qsTr("Installed “%1”").arg(r.name)
                 d.resultMessage = r.warnings.length
                     ? qsTr("Applied with warnings: %1").arg(r.warnings.join("; "))

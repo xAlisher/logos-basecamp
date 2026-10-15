@@ -60,7 +60,9 @@ Item {
                 ThemeRegistry.reload()
                 Theme.setTheme(r.id)
                 d.resultSeverity = LogosNotice.Success
-                d.resultTitle = qsTr("Installed “%1”").arg(r.name)
+                d.resultTitle = r.assets
+                    ? qsTr("Installed “%1” with %2 icons").arg(r.name).arg(r.assets)
+                    : qsTr("Installed “%1”").arg(r.name)
                 d.resultMessage = r.warnings.length
                     ? qsTr("Applied with warnings: %1").arg(r.warnings.join("; "))
                     : qsTr("It is now active. Apps pick it up the next time you start Basecamp.")
@@ -161,7 +163,7 @@ Item {
 
                 LogosText {
                     Layout.fillWidth: true
-                    text: qsTr("A Logos theme file (theme.json). Installed to %1").arg(ThemeInstaller.themesDir)
+                    text: qsTr("A Logos theme file (.json), or a bundle with its icons inside. Installed to %1").arg(ThemeInstaller.themesDir)
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textTertiary
                     wrapMode: Text.WrapAnywhere

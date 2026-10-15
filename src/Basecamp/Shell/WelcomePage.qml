@@ -536,8 +536,10 @@ Item {
                     width: card.iconSize
                     height: card.iconSize
                     source: card.iconSource
-                    color: card.isActive ? Theme.palette.backgroundBlack
+                    color: card.isActive ? Theme.palette.accentForeground
                                          : Theme.palette.textTertiary
+                    // Grey SVG: lift to white so accentForeground lands exactly.
+                    brightness: card.isActive ? 1.0 : 0
                 }
             }
 

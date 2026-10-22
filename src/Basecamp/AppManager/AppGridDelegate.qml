@@ -109,6 +109,10 @@ ItemDelegate {
     TapHandler {
         enabled: root.contextMenuEnabled
         acceptedButtons: Qt.RightButton
+        // acceptedButtons filters mice only: without this, every touch tap
+        // also opened the menu (at the stale pointer position) on top of
+        // whatever the tap opened. Touch has long-press instead.
+        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
         onTapped: contextMenu.openFor(d.snapshot())
     }
 

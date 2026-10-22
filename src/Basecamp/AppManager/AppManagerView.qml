@@ -67,8 +67,15 @@ Rectangle {
             if (root.appsProxy) root.appsProxy.installStateFilter = installStateFilter
 
         property string searchText: ""
-        onSearchTextChanged:
+        onSearchTextChanged: {
             if (root.appsProxy) root.appsProxy.searchText = searchText
+            // A query set from outside (applySearch) must show in compact too,
+            // or the grid is filtered with the search folded away and empty.
+            if (root.compact && compactSearch.text !== searchText) {
+                compactSearch.text = searchText
+                if (searchText.length > 0) compactSearch.expanded = true
+            }
+        }
 
         property int    selectedCategoryIndex: 0   // 0 = "All"
         property string viewMode: "grid"

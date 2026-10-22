@@ -54,7 +54,13 @@ Rectangle {
     readonly property bool touch: compact || Theme.density === "touch"
     // Narrowed to compact while a section was open (a window dragged narrow):
     // stay on that section rather than jumping back to the list.
-    onCompactChanged: if (compact && width > 0) d.detailOpen = true
+    onCompactChanged: {
+        if (compact && width > 0) d.detailOpen = true
+        // Carry a query across: unfold the compact search with it, or hand
+        // the compact query back to the full search bar.
+        if (compact && d.searchText.length > 0) { compactSearch.text = d.searchText; compactSearch.expanded = true }
+        if (!compact) compactSearch.expanded = false
+    }
 
     QtObject {
         id: d
@@ -86,7 +92,7 @@ Rectangle {
             selectedIndex === sectionAppsInspector ||
             selectedIndex === sectionModuleInspector
 
-        onSelectedIndexChanged: searchText = ""
+        onSelectedIndexChanged: { searchText = ""; compactSearch.close() }
 
         readonly property int sidebarWidth: root.windowClass === "expanded" ? 200 : 168
 
@@ -102,7 +108,8 @@ Rectangle {
 
         function openSection(i) { selectedIndex = i; detailOpen = true }
         function goBack() {
-            if (nestedOpen) moduleInspector.showingInterface = false
+            if (compactSearch.expanded) compactSearch.close()
+            else if (nestedOpen) moduleInspector.showingInterface = false
             else detailOpen = false
         }
     }
@@ -127,40 +134,58 @@ Rectangle {
         anchors.bottomMargin: root.compact ? Theme.spacing.large : Theme.pageMargin(root.width)
         spacing: root.compact ? Theme.spacing.medium : Theme.spacing.xlarge
 
-        // ─── Compact back row (a section is open) ───
-        // "‹ Settings": the whole row is the 44 px target and names where
-        // back goes. The section keeps its own title below it.
-        AbstractButton {
-            id: backRow
-            objectName: "settings.back"
+        // ─── Compact navigation bar (a section is open) ───
+        // "‹ Settings": the whole label is the 44 px back target and names
+        // where back goes; the section keeps its own title below it. A
+        // searchable section adds a 44 px search icon at the right end that
+        // unfolds across the bar (the back label hides while it's open).
+        RowLayout {
+            id: compactBar
             visible: root.compact && d.detailOpen
             Layout.fillWidth: true
             Layout.leftMargin: -Theme.spacing.small
-            implicitHeight: Theme.minTouchTarget
-            Accessible.name: qsTr("Back")
-            onClicked: d.goBack()
+            spacing: Theme.spacing.tiny
 
-            background: Rectangle {
-                radius: Theme.spacing.radiusLarge
-                color: backRow.pressed ? Theme.components.listItem.backgroundPressed : "transparent"
+            AbstractButton {
+                id: backRow
+                objectName: "settings.back"
+                visible: !compactSearch.expanded
+                Layout.fillWidth: true
+                implicitHeight: Theme.minTouchTarget
+                Accessible.name: qsTr("Back")
+                onClicked: d.goBack()
+
+                background: Rectangle {
+                    radius: Theme.spacing.radiusLarge
+                    color: backRow.pressed ? Theme.components.listItem.backgroundPressed : "transparent"
+                }
+                contentItem: RowLayout {
+                    spacing: Theme.spacing.tiny
+                    LogosIcon {
+                        source: LogosIcons.arrowLeft
+                        color: Theme.palette.text
+                        Layout.preferredWidth: 20
+                        Layout.preferredHeight: 20
+                        Layout.leftMargin: Theme.spacing.small
+                    }
+                    LogosText {
+                        Layout.fillWidth: true
+                        text: d.nestedOpen ? qsTr("Module Inspector") : qsTr("Settings")
+                        font.pixelSize: Theme.typography.primaryText
+                        font.weight: Theme.typography.weightMedium
+                        color: Theme.palette.text
+                        elide: Text.ElideRight
+                    }
+                }
             }
-            contentItem: RowLayout {
-                spacing: Theme.spacing.tiny
-                LogosIcon {
-                    source: LogosIcons.arrowLeft
-                    color: Theme.palette.text
-                    Layout.preferredWidth: 20
-                    Layout.preferredHeight: 20
-                    Layout.leftMargin: Theme.spacing.small
-                }
-                LogosText {
-                    Layout.fillWidth: true
-                    text: d.nestedOpen ? qsTr("Module Inspector") : qsTr("Settings")
-                    font.pixelSize: Theme.typography.primaryText
-                    font.weight: Theme.typography.weightMedium
-                    color: Theme.palette.text
-                    elide: Text.ElideRight
-                }
+
+            LogosSearchToggle {
+                id: compactSearch
+                objectName: "settings.searchToggle"
+                visible: d.searchable && !d.nestedOpen
+                placeholderText: d.selectedIndex === d.sectionAppsInspector
+                                 ? qsTr("Search apps…") : qsTr("Search modules…")
+                onTextChanged: if (root.compact && text !== d.searchText) d.searchText = text
             }
         }
 
@@ -168,12 +193,12 @@ Rectangle {
         // Title + subtitle on the left; when an inspector is selected, a
         // page-level search bar joins on the right — same layout as
         // AppManagerView so the two feel familiar side by side.
-        // Compact: the title block only on the Sections list, and the search
-        // bar on its own full-width line above an open inspector.
+        // Compact: no header at all — the shell's bar names the page and
+        // search lives in the compact bar above.
         GridLayout {
             Layout.fillWidth: true
-            visible: !root.compact || (d.detailOpen && d.searchable && !d.nestedOpen)
-            columns: root.compact ? 1 : 3
+            visible: !root.compact
+            columns: 3
             columnSpacing: Theme.spacing.xlarge
             rowSpacing: Theme.spacing.medium
 
@@ -199,26 +224,23 @@ Rectangle {
                 }
             }
 
-            Item { Layout.fillWidth: true; visible: !root.compact }
+            Item { Layout.fillWidth: true }
 
             LogosSearchBar {
                 id: searchBar
                 objectName: "settings.searchField"
-                visible: d.searchable && d.showDetail && !(root.compact && d.nestedOpen)
+                visible: d.searchable
                 Layout.alignment: Qt.AlignRight
-                Layout.fillWidth: root.compact
-                Layout.preferredWidth: root.compact ? -1 : 605
-                Layout.minimumWidth: root.compact ? 0 : 200
+                Layout.preferredWidth: 605
+                Layout.minimumWidth: 200
                 // Shrinks beside the title rather than running off the right edge.
-                Layout.maximumWidth: root.compact ? Number.POSITIVE_INFINITY
-                    : Math.max(200, root.width - 2 * Theme.pageMargin(root.width)
-                                    - titleBlock.implicitWidth - 2 * Theme.spacing.xlarge)
+                Layout.maximumWidth: Math.max(200, root.width - 2 * Theme.pageMargin(root.width)
+                                                   - titleBlock.implicitWidth - 2 * Theme.spacing.xlarge)
                 text: d.searchText
                 placeholderText: d.selectedIndex === d.sectionAppsInspector
                                  ? qsTr("Search apps…")
                                  : qsTr("Search modules…")
-                // No keyboard-shortcut hint on a phone.
-                shortcutHint: root.compact ? "" : searchShortcut.nativeText
+                shortcutHint: searchShortcut.nativeText
                 onTextChanged: {
                     if (text !== d.searchText)
                         d.searchText = text
@@ -230,8 +252,12 @@ Rectangle {
                 objectName: "settings.searchShortcut"
                 sequence: "Ctrl+K"
                 context: Qt.WindowShortcut
-                enabled: root.visible && d.searchable
+                enabled: root.visible && d.searchable && d.showDetail
                 onActivated: {
+                    if (root.compact) {
+                        compactSearch.open()
+                        return
+                    }
                     searchBar.textInput.forceActiveFocus()
                     searchBar.textInput.selectAll()
                 }

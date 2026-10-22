@@ -41,6 +41,7 @@ Item {
     readonly property bool cards: width < Theme.breakpoints.medium
     readonly property bool fullTable: width >= 760
     readonly property bool touch: cards || Theme.density === "touch"
+    onVisibleChanged: if (!visible) detailSheet.close()
 
     property string selectedPlugin: ""
     property bool showingInterface: false
@@ -119,6 +120,9 @@ Item {
                            ? qsTr("No core modules available.")
                            : qsTr("No modules match the current filter.")
 
+                // Medium: a tap on a row opens its detail too (single tap, no hover).
+                onRowClicked: (index, row) => { if (!root.fullTable) detailSheet.openFor(row) }
+
                 onSortRequested: function(role, order) {
                     modulesTable.sortRole = role
                     modulesTable.sortOrder = order
@@ -132,7 +136,7 @@ Item {
                 // (RESPONSIVE.md §3.5, medium). Narrower still: cards (see below).
                 columns: root.fullTable
                          ? [cols.module, cols.status, cols.cpu, cols.memory, cols.actions]
-                         : [cols.module, cols.status, cols.actions]
+                         : [cols.module, cols.status, cols.actions, cols.more]
 
                 QtObject {
                     id: cols
@@ -175,6 +179,15 @@ Item {
                         fillWidth: true
                         alignment: Qt.AlignRight | Qt.AlignVCenter
                         cellDelegate: actionsCellComponent
+                    }
+                    property LogosTableColumn more: LogosTableColumn {
+                        title: ""
+                        minWidth: 56
+                        preferredWidth: 56
+                        maxWidth: 56
+                        cellPadding: 0
+                        alignment: Qt.AlignHCenter | Qt.AlignVCenter
+                        cellDelegate: moreCellComponent
                     }
                 }
 
@@ -256,6 +269,23 @@ Item {
                     }
                 }
 
+                // Medium only: ⋯ opens the row's detail sheet with the dropped columns.
+                Component {
+                    id: moreCellComponent
+
+                    Item {
+                        LogosIconButton {
+                            objectName: "moduleInspector.more." + (rowItem && rowItem.name ? rowItem.name : "")
+                            anchors.centerIn: parent
+                            size: Theme.minTouchTarget
+                            flat: true
+                            iconSource: LogosIcons.more
+                            Accessible.name: qsTr("Details")
+                            onClicked: detailSheet.openFor(rowItem)
+                        }
+                    }
+                }
+
                 Component {
                     id: actionsCellComponent
 
@@ -311,6 +341,21 @@ Item {
                 onBackClicked: root.showingInterface = false
             }
         }
+    }
+
+    // Medium (three key columns): the row's detail, dropped columns included,
+    // as a sheet over the right side of this pane. Hidden in the other layouts.
+    InspectorDetailSheet {
+        id: detailSheet
+        anchors.fill: parent
+        allowed: !root.cards && !root.fullTable && root.visible && !root.showingInterface
+        busy: root.loading
+        showStats: true
+        interfaceEnabled: true
+        locked: !!row && root.protectedModules.indexOf(row.name) !== -1
+        onInterfaceRequested: r => { close(); root.openInterface(r.name) }
+        onLoadToggleRequested: r => r.isLoaded ? root.unloadRequested(r.name)
+                                               : root.loadRequested(r.name)
     }
 
     // Same Reload feedback as the App Manager / Package Manager panels.

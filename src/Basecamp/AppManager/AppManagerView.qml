@@ -33,6 +33,26 @@ Rectangle {
     signal navigateToRepositories()
     signal refreshRequested()
 
+    // ─── Responsive (docs/RESPONSIVE.md in the design system) ───
+    // Measured on the view's own width (a shell tab, a torn-off window, a phone):
+    //   expanded (≥ 840)  as on desktop: title + search, Categories sidebar,
+    //                     the Apps panel with every control in its header.
+    //   medium            the sidebar narrows to 168; the panel header wraps.
+    //   compact (< 600)   no page title (the shell's bar names the page). A bar
+    //                     with the category picker and a 44 px search icon at its
+    //                     right end that unfolds across it; Reload, Manage
+    //                     Repositories, Show unavailable and the view mode move
+    //                     into the panel's ⋯ menu; tiles get narrower cells.
+    readonly property string windowClass: Theme.windowClass(width)
+    readonly property bool compact: windowClass === "compact"
+    readonly property bool touch: compact || Theme.density === "touch"
+    // Carry a query across a class change: unfold the compact search with it,
+    // or hand it back to the full search bar.
+    onCompactChanged: {
+        if (compact && d.searchText.length > 0) { compactSearch.text = d.searchText; compactSearch.expanded = true }
+        if (!compact) compactSearch.expanded = false
+    }
+
     QtObject {
         id: d
 
@@ -52,6 +72,10 @@ Rectangle {
 
         property int    selectedCategoryIndex: 0   // 0 = "All"
         property string viewMode: "grid"
+        // Compact: three tiles across a phone instead of one stretched tile.
+        // Medium: three across rather than two tiles adrift in wide cells.
+        readonly property int gridMinCellWidth:
+            root.compact ? 104 : root.windowClass === "medium" ? 140 : 180
 
         readonly property var categories:
             root.appsProxy ? root.appsProxy.categories : ["All"]
@@ -92,15 +116,92 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Theme.spacing.xxlarge
-        spacing: Theme.spacing.xlarge
+        anchors.leftMargin: Theme.pageMargin(root.width)
+        anchors.rightMargin: Theme.pageMargin(root.width)
+        anchors.topMargin: root.compact ? Theme.spacing.small : Theme.pageMargin(root.width)
+        anchors.bottomMargin: root.compact ? Theme.spacing.large : Theme.pageMargin(root.width)
+        spacing: root.compact ? Theme.spacing.small : Theme.spacing.xlarge
+
+        // ─── Compact bar ───
+        // Category picker on the left, search folded into a 44 px icon at
+        // the right end; unfolded, the field spans the bar (picker hidden).
+        RowLayout {
+            id: compactBar
+            visible: root.compact
+            Layout.fillWidth: true
+            spacing: Theme.spacing.small
+
+            AbstractButton {
+                id: categoryPicker
+                objectName: "appManager.categoryPicker"
+                visible: !compactSearch.expanded
+                Layout.fillWidth: true
+                Layout.leftMargin: -Theme.spacing.small
+                implicitHeight: Theme.minTouchTarget
+                Accessible.name: qsTr("Category: %1").arg(d.selectedCategory)
+                onClicked: categoryMenu.popupUnder(categoryPicker)
+
+                background: Rectangle {
+                    radius: Theme.spacing.radiusLarge
+                    color: categoryPicker.pressed ? Theme.components.listItem.backgroundPressed : "transparent"
+                }
+                contentItem: RowLayout {
+                    spacing: Theme.spacing.tiny
+                    LogosText {
+                        Layout.leftMargin: Theme.spacing.small
+                        text: d.selectedCategoryIndex === 0 ? qsTr("All categories") : d.selectedCategory
+                        font.pixelSize: Theme.typography.primaryText
+                        font.weight: Theme.typography.weightMedium
+                        color: Theme.palette.text
+                        elide: Text.ElideRight
+                        Layout.maximumWidth: categoryPicker.width - 40
+                    }
+                    LogosIcon {
+                        source: LogosIcons.triangleDown
+                        color: Theme.palette.textSecondary
+                        Layout.preferredWidth: 16
+                        Layout.preferredHeight: 16
+                    }
+                    Item { Layout.fillWidth: true }
+                }
+            }
+
+            LogosMenu {
+                id: categoryMenu
+                objectName: "appManager.categoryMenu"
+
+                Instantiator {
+                    model: d.categories
+                    delegate: AppCheckMenuItem {
+                        objectName: "appManager.categoryItem." + modelData
+                        required property var modelData
+                        required property int index
+                        text: modelData
+                        touch: true
+                        checked: index === d.selectedCategoryIndex
+                        onTriggered: d.selectedCategoryIndex = index
+                    }
+                    onObjectAdded: (index, object) => categoryMenu.insertItem(index, object)
+                    onObjectRemoved: (index, object) => categoryMenu.removeItem(object)
+                }
+            }
+
+            LogosSearchToggle {
+                id: compactSearch
+                objectName: "appManager.searchToggle"
+                placeholderText: qsTr("Search apps…")
+                onTextChanged: if (root.compact && text !== d.searchText) d.searchText = text
+            }
+        }
 
         // Header: title + subtitle on the left, search on the right.
         RowLayout {
+            visible: !root.compact
             Layout.fillWidth: true
             spacing: Theme.spacing.xlarge
 
             ColumnLayout {
+                id: titleBlock
                 Layout.fillWidth: true
                 spacing: Theme.spacing.tiny
 
@@ -126,6 +227,9 @@ Rectangle {
                 Layout.alignment: Qt.AlignRight
                 Layout.preferredWidth: 605
                 Layout.minimumWidth: 200
+                // Shrinks beside the title rather than running off the right edge.
+                Layout.maximumWidth: Math.max(200, root.width - 2 * Theme.pageMargin(root.width)
+                                                   - titleBlock.implicitWidth - 2 * Theme.spacing.xlarge)
                 text: d.searchText
                 placeholderText: qsTr("Search apps…")
                 shortcutHint: searchShortcut.nativeText
@@ -143,6 +247,10 @@ Rectangle {
                 context: Qt.WindowShortcut
                 enabled: root.visible
                 onActivated: {
+                    if (root.compact) {
+                        compactSearch.open()
+                        return
+                    }
                     searchBar.textInput.forceActiveFocus()
                     searchBar.textInput.selectAll()
                 }
@@ -157,10 +265,13 @@ Rectangle {
             // ─── Categories sidebar ───
             LogosListView {
                 id: categoriesList
+                visible: !root.compact
 
-                Layout.preferredWidth: 200
-                Layout.minimumWidth: 160
-                Layout.maximumWidth: 200
+                // Expanded: 200 as on desktop; medium leaves the apps more room.
+                readonly property int sidebarWidth: root.windowClass === "expanded" ? 200 : 168
+                Layout.preferredWidth: sidebarWidth
+                Layout.minimumWidth: sidebarWidth
+                Layout.maximumWidth: sidebarWidth
                 Layout.fillHeight: true
 
                 model: d.categories
@@ -180,6 +291,9 @@ Rectangle {
                     id: cell
                     objectName: "appManager.category." + modelData
                     width: ListView.view.width
+                    implicitHeight: root.touch
+                                    ? Math.max(Theme.minTouchTarget, Theme.components.listItem.height)
+                                    : Theme.components.listItem.height
                     text: modelData
                     highlighted: ListView.isCurrentItem
                     radius: Theme.spacing.radiusLarge
@@ -213,6 +327,9 @@ Rectangle {
                         Layout.rightMargin: Theme.spacing.medium
 
                         loading: root.loading
+                        compact: root.compact
+                        touch: root.touch
+                        showLabels: root.windowClass === "expanded"
                         viewMode: d.viewMode
                         showUnavailable: root.showUnavailable
                         onReloadClicked: root.refreshRequested()
@@ -282,6 +399,8 @@ Rectangle {
                                     count: repoFilter.visibleCount
                                     modulesSource: repoFilter
                                     viewMode: d.viewMode
+                                    touch: root.touch
+                                    gridMinCellWidth: d.gridMinCellWidth
                                     visible: modelData.enabled !== false
                                              && repoFilter.visibleCount > 0
 
@@ -307,6 +426,8 @@ Rectangle {
                                 count: localFilter.visibleCount
                                 modulesSource: localFilter
                                 viewMode: d.viewMode
+                                touch: root.touch
+                                gridMinCellWidth: d.gridMinCellWidth
                                 visible: localFilter.visibleCount > 0
 
                                 onAppClicked: (name, url) => root.appClicked(name, url)

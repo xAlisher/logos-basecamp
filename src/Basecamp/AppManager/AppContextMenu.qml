@@ -25,6 +25,18 @@ LogosMenu {
         root.popup();
     }
 
+    // From a visible ⋯ button or a long-press: the menu opens under the
+    // anchor, right edges aligned (a ⋯ sits at the row's right end), not at
+    // the pointer.
+    function openUnder(anchor, appData_) {
+        root.appData = appData_ || ({});
+        root.popup(anchor, anchor.width - root.width, anchor.height + Theme.spacing.tiny);
+    }
+
+    // Touch (a phone, or touch density): 44 px rows.
+    property bool touch: false
+    readonly property int rowHeight: touch ? Theme.minTouchTarget : Theme.components.menuItem.height
+
 
     QtObject {
         id: d
@@ -58,7 +70,7 @@ LogosMenu {
         objectName: "appContextMenu.open"
         text: qsTr("Open")
         visible: d.rowInstalled
-        height: visible ? implicitHeight : 0
+        height: visible ? root.rowHeight : 0
         onTriggered: root.openRequested(d.rowName, d.rowRepositoryUrl)
     }
 
@@ -66,7 +78,7 @@ LogosMenu {
         objectName: "appContextMenu.details"
         text: qsTr("Details")
         visible: d.rowInstalled
-        height: visible ? implicitHeight : 0
+        height: visible ? root.rowHeight : 0
         onTriggered: root.detailsRequested(d.rowName, d.rowRepositoryUrl)
     }
 
@@ -74,7 +86,7 @@ LogosMenu {
         objectName: "appContextMenu.install"
         text: qsTr("Install…")
         visible: !d.rowInstalled
-        height: visible ? implicitHeight : 0
+        height: visible ? root.rowHeight : 0
         onTriggered: root.installRequested(d.rowName, d.rowRepositoryUrl)
     }
 
@@ -88,7 +100,7 @@ LogosMenu {
         objectName: "appContextMenu.uninstall"
         text: qsTr("Uninstall")
         visible: d.canUninstall
-        height: visible ? implicitHeight : 0
+        height: visible ? root.rowHeight : 0
         enabled: !d.rowBusy
         onTriggered: root.uninstallRequested(d.rowName, d.rowRepositoryUrl)
 

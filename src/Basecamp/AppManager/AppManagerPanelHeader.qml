@@ -15,6 +15,13 @@ Item {
     property string viewMode: "grid"
     property bool loading: false
     property bool showUnavailable: false
+    // Compact (a phone): the tabs and one ⋯ menu holding Reload, Manage
+    // Repositories, Show unavailable and the view mode. Touch: 44 px targets.
+    // showLabels: the "Apps" title and "View:" label (they fit when expanded).
+    property bool compact: false
+    property bool touch: false
+    property bool showLabels: true
+    readonly property int controlHeight: touch ? Theme.minTouchTarget : 40
 
     signal reloadClicked()
     signal repositoriesClicked()
@@ -38,6 +45,7 @@ Item {
             spacing: Theme.spacing.large
 
             LogosText {
+                visible: !root.compact
                 text: qsTr("Apps")
                 font.pixelSize: Theme.typography.panelTitleText
                 font.weight: Theme.typography.weightMedium
@@ -48,16 +56,73 @@ Item {
                 id: stateTabBar
                 spacing: Theme.spacing.large
 
-                LogosTabButton { text: qsTr("All");           iconSource: LogosIcons.pages }
-                LogosTabButton { text: qsTr("Installed") }
-                LogosTabButton { text: qsTr("Not Installed") }
+                LogosTabButton { objectName: "appManager.tab.all"; text: qsTr("All"); iconSource: LogosIcons.pages
+                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
+                LogosTabButton { objectName: "appManager.tab.installed"; text: qsTr("Installed")
+                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
+                LogosTabButton { objectName: "appManager.tab.notInstalled"; text: qsTr("Not Installed")
+                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
             }
 
             Item { Layout.fillWidth: true }
+
+            // Compact: everything else behind one visible ⋯.
+            LogosIconButton {
+                id: moreButton
+                objectName: "appManager.moreButton"
+                visible: root.compact
+                Layout.preferredWidth: Theme.minTouchTarget
+                Layout.preferredHeight: Theme.minTouchTarget
+                size: Theme.minTouchTarget
+                flat: true
+                iconSource: LogosIcons.more
+                Accessible.name: qsTr("More")
+                onClicked: moreMenu.popupUnder(moreButton)
+            }
+
+            LogosMenu {
+                id: moreMenu
+                objectName: "appManager.moreMenu"
+
+                AppCheckMenuItem {
+                    objectName: "appManager.more.reload"
+                    // Same left gutter as the checkable row: one text column.
+                    checkable: false
+                    touch: true
+                    text: qsTr("Reload")
+                    enabled: !root.loading
+                    onTriggered: root.reloadClicked()
+                }
+                AppCheckMenuItem {
+                    objectName: "appManager.more.repositories"
+                    // Same left gutter as the checkable row: one text column.
+                    checkable: false
+                    touch: true
+                    text: qsTr("Manage Repositories")
+                    onTriggered: root.repositoriesClicked()
+                }
+                LogosMenuSeparator {}
+                AppCheckMenuItem {
+                    objectName: "appManager.more.showUnavailable"
+                    touch: true
+                    text: qsTr("Show unavailable")
+                    checked: root.showUnavailable
+                    onTriggered: root.showUnavailableRequested(checked)
+                }
+                AppCheckMenuItem {
+                    objectName: "appManager.more.viewMode"
+                    // Same left gutter as the checkable row: one text column.
+                    checkable: false
+                    touch: true
+                    text: root.viewMode === "grid" ? qsTr("Show as list") : qsTr("Show as grid")
+                    onTriggered: root.viewModeChangeRequested(root.viewMode === "grid" ? "list" : "grid")
+                }
+            }
         }
 
         RowLayout {
             id: rightHalf
+            visible: !root.compact
             Layout.fillWidth: true
             spacing: Theme.spacing.medium
 
@@ -67,9 +132,9 @@ Item {
                 id: filterButton
                 objectName: "appManager.filterButton"
                 Layout.alignment: Qt.AlignVCenter
-                Layout.preferredWidth: 40
-                Layout.preferredHeight: 40
-                size: 40
+                Layout.preferredWidth: root.controlHeight
+                Layout.preferredHeight: root.controlHeight
+                size: root.controlHeight
                 iconSize: 16
                 iconSource: BasecampIcons.filter
                 iconColor: root.showUnavailable
@@ -98,36 +163,12 @@ Item {
                 id: filterMenu
                 objectName: "appManager.filterMenu"
 
-                LogosMenuItem {
-                    id: showUnavailableItem
+                AppCheckMenuItem {
                     objectName: "appManager.showUnavailableItem"
-                    readonly property int indicatorSize: 14
+                    touch: root.touch
                     text: qsTr("Show unavailable")
-                    checkable: true
                     checked: root.showUnavailable
                     onTriggered: root.showUnavailableRequested(checked)
-
-                    indicator: LogosIcon {
-                        anchors.verticalCenter: parent.verticalCenter
-                        x: Theme.spacing.medium
-                        width: showUnavailableItem.indicatorSize
-                        height: showUnavailableItem.indicatorSize
-                        visible: showUnavailableItem.checked
-                        source: LogosIcons.check
-                        color: Theme.palette.text
-                    }
-
-                    contentItem: LogosText {
-                        leftPadding: Theme.spacing.medium
-                                     + showUnavailableItem.indicatorSize
-                                     + Theme.spacing.small
-                        rightPadding: Theme.spacing.medium
-                        verticalAlignment: Text.AlignVCenter
-                        text: showUnavailableItem.text
-                        color: showUnavailableItem.enabled
-                               ? Theme.palette.text
-                               : Theme.palette.textMuted
-                    }
                 }
             }
 
@@ -136,9 +177,10 @@ Item {
                 objectName: "appManager.reloadButton"
                 Layout.fillWidth: true
                 Layout.minimumWidth: 80
-                Layout.preferredWidth: 100
-                Layout.maximumWidth: 100
-                Layout.preferredHeight: 40
+                // Touch padding needs more than 100 for "Reload" to show whole.
+                Layout.preferredWidth: root.touch ? implicitWidth : 100
+                Layout.maximumWidth: root.touch ? implicitWidth : 100
+                Layout.preferredHeight: root.controlHeight
                 radius: Theme.spacing.radiusLarge
                 text: qsTr("Reload")
                 leadingIcon.source: LogosIcons.refresh
@@ -152,17 +194,19 @@ Item {
                 Layout.minimumWidth: 100
                 Layout.preferredWidth: implicitWidth
                 Layout.maximumWidth: implicitWidth
-                Layout.preferredHeight: 40
+                Layout.preferredHeight: root.controlHeight
                 radius: Theme.spacing.radiusLarge
                 text: qsTr("Manage Repositories")
                 onClicked: root.repositoriesClicked()
             }
 
             RowLayout {
-                spacing: 24
-                Layout.preferredHeight: 36
+                // Touch: the 20 px glyphs sit in 44 px hit areas, closer together.
+                spacing: root.touch ? 0 : 24
+                Layout.preferredHeight: root.touch ? Theme.minTouchTarget : 36
 
                 LogosText {
+                    visible: root.showLabels
                     Layout.alignment: Qt.AlignVCenter
                     verticalAlignment: Text.AlignVCenter
                     text: qsTr("View:")
@@ -170,8 +214,10 @@ Item {
                 }
 
                 LogosIconButton {
+                    objectName: "appManager.viewGrid"
+                    Accessible.name: qsTr("Grid view")
                     iconSource: LogosIcons.grid
-                    size: 20
+                    size: root.touch ? Theme.minTouchTarget : 20
                     iconSize: 20
                     iconColor: root.viewMode === "grid"
                                ? Theme.palette.text
@@ -181,8 +227,10 @@ Item {
                 }
 
                 LogosIconButton {
+                    objectName: "appManager.viewList"
+                    Accessible.name: qsTr("List view")
                     iconSource: LogosIcons.list
-                    size: 20
+                    size: root.touch ? Theme.minTouchTarget : 20
                     iconSize: 20
                     iconColor: root.viewMode === "list"
                                ? Theme.palette.text

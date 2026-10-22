@@ -36,8 +36,17 @@ Item {
     signal loadRequested(string name)
     signal unloadRequested(string name)
 
+    // ─── Responsive (RESPONSIVE.md §3.5), by this pane's own width ───
+    // ≥ 760 the full table; 600–759 three key columns; < 600 cards.
+    readonly property bool cards: width < Theme.breakpoints.medium
+    readonly property bool fullTable: width >= 760
+    readonly property bool touch: cards || Theme.density === "touch"
+
     property string selectedPlugin: ""
     property bool showingInterface: false
+    // The host draws its own back row (Settings on a phone): hide the
+    // Interface screen's "← Back" so there is one way back, not two.
+    property bool compactBack: false
 
     // Core modules Basecamp itself runs on: the package pipeline
     // (package_manager, package_downloader) and the auth-token registry
@@ -86,6 +95,7 @@ Item {
                 subtitle: qsTr("Core modules known to the runtime, with live resource usage.")
                 reloadObjectName: "moduleInspector.reloadButton"
                 loading: root.loading
+                touch: root.touch
                 visibleCount: tableModel.visibleCount
                 totalCount: tableModel.totalCount
 
@@ -96,6 +106,7 @@ Item {
                 id: modulesTable
                 objectName: "moduleInspector.table"
 
+                visible: !root.cards
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 Layout.bottomMargin: Theme.spacing.large
@@ -117,40 +128,47 @@ Item {
                 // Keep every row instantiated — see AppsInspectorView for why.
                 Component.onCompleted: if (view) view.cacheBuffer = 20000
 
-                columns: [
-                    LogosTableColumn {
+                // Full table when it fits; three key columns when it doesn't
+                // (RESPONSIVE.md §3.5, medium). Narrower still: cards (see below).
+                columns: root.fullTable
+                         ? [cols.module, cols.status, cols.cpu, cols.memory, cols.actions]
+                         : [cols.module, cols.status, cols.actions]
+
+                QtObject {
+                    id: cols
+                    property LogosTableColumn module: LogosTableColumn {
                         title: qsTr("Module")
                         role: "label"
                         minWidth: 180
                         preferredWidth: 240
                         sortable: true
                         cellDelegate: moduleCellComponent
-                    },
-                    LogosTableColumn {
+                    }
+                    property LogosTableColumn status: LogosTableColumn {
                         title: qsTr("Status")
                         role: "statusText"
                         minWidth: 110
                         preferredWidth: 130
                         sortable: true
                         cellDelegate: statusCellComponent
-                    },
-                    LogosTableColumn {
+                    }
+                    property LogosTableColumn cpu: LogosTableColumn {
                         title: qsTr("CPU")
                         role: "cpu"
                         minWidth: 80
                         preferredWidth: 90
                         sortable: true
                         cellDelegate: cpuCellComponent
-                    },
-                    LogosTableColumn {
+                    }
+                    property LogosTableColumn memory: LogosTableColumn {
                         title: qsTr("Memory")
                         role: "memory"
                         minWidth: 90
                         preferredWidth: 110
                         sortable: true
                         cellDelegate: memoryCellComponent
-                    },
-                    LogosTableColumn {
+                    }
+                    property LogosTableColumn actions: LogosTableColumn {
                         title: ""
                         minWidth: 240
                         preferredWidth: 260
@@ -158,7 +176,7 @@ Item {
                         alignment: Qt.AlignRight | Qt.AlignVCenter
                         cellDelegate: actionsCellComponent
                     }
-                ]
+                }
 
                 Component {
                     id: moduleCellComponent
@@ -259,6 +277,28 @@ Item {
                     }
                 }
             }
+
+            // Narrow pane: the same rows as cards (CPU · memory on one line).
+            InspectorCardList {
+                objectName: "moduleInspector.cards"
+                visible: root.cards
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                Layout.leftMargin: Theme.spacing.large
+                Layout.rightMargin: Theme.spacing.large
+                Layout.bottomMargin: Theme.spacing.large
+                model: root.cards ? tableModel : null
+                busy: root.loading
+                showStats: true
+                interfaceEnabled: true
+                protectedModules: root.protectedModules
+                emptyText: tableModel.totalCount === 0
+                           ? qsTr("No core modules available.")
+                           : qsTr("No modules match the current filter.")
+                onLoadToggleRequested: row => row.isLoaded ? root.unloadRequested(row.name)
+                                                           : root.loadRequested(row.name)
+                onInterfaceRequested: row => root.openInterface(row.name)
+            }
         }
 
         // ─── 1: Interface (methods + events) ───
@@ -267,6 +307,7 @@ Item {
                 anchors.fill: parent
                 anchors.margins: Theme.spacing.large
                 pluginName: root.selectedPlugin
+                showBack: !root.compactBack
                 onBackClicked: root.showingInterface = false
             }
         }

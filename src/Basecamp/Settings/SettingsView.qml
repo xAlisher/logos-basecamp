@@ -3,6 +3,7 @@ import QtQuick.Controls
 import QtQuick.Layouts
 
 import Logos.Controls
+import Logos.Icons
 import Logos.Theme
 
 Rectangle {
@@ -40,7 +41,20 @@ Rectangle {
         repositoriesView.reportOperationResult(operation, url, success, error)
     }
 
-    function showRepositories() { if (root.repositoriesAvailable) d.selectedIndex = d.sectionRepositories }
+    function showRepositories() { if (root.repositoriesAvailable) d.openSection(d.sectionRepositories) }
+
+    // ─── Responsive (docs/RESPONSIVE.md in the design system) ───
+    // Settings is a list → detail screen. Measured on Settings' own width (it
+    // sits in a shell tab, a torn-off window or a phone):
+    //   medium / expanded  Sections list on the left, the section on the right.
+    //   compact (< 600)    the Sections list is the page; a tap pushes the
+    //                      section full width under a "‹ Settings" back row.
+    readonly property string windowClass: Theme.windowClass(width)
+    readonly property bool compact: windowClass === "compact"
+    readonly property bool touch: compact || Theme.density === "touch"
+    // Narrowed to compact while a section was open (a window dragged narrow):
+    // stay on that section rather than jumping back to the list.
+    onCompactChanged: if (compact && width > 0) d.detailOpen = true
 
     QtObject {
         id: d
@@ -54,12 +68,12 @@ Rectangle {
         readonly property int sectionRepositories:    5
 
         readonly property var sections: [
-            { label: qsTr("Dashboard") },
-            { label: qsTr("Apps Inspector") },
-            { label: qsTr("Module Inspector") },
-            { label: qsTr("Customisation") },
-            { label: qsTr("Notifications") },
-            { label: qsTr("Package Repositories") }
+            { label: qsTr("Dashboard"),        hint: qsTr("Version and build commits") },
+            { label: qsTr("Apps Inspector"),   hint: qsTr("Load and unload apps") },
+            { label: qsTr("Module Inspector"), hint: qsTr("Core modules, CPU and memory") },
+            { label: qsTr("Customisation"),    hint: qsTr("Theme, density and shell") },
+            { label: qsTr("Notifications"),    hint: qsTr("Which apps may notify you") },
+            { label: qsTr("Package Repositories"), hint: qsTr("Where apps come from") }
         ].slice(0, root.repositoriesAvailable ? 6 : 5)   // Repositories must stay last
 
         property int selectedIndex: 0
@@ -73,6 +87,32 @@ Rectangle {
             selectedIndex === sectionModuleInspector
 
         onSelectedIndexChanged: searchText = ""
+
+        readonly property int sidebarWidth: root.windowClass === "expanded" ? 200 : 168
+
+        // Compact only: a section is pushed over the Sections list.
+        property bool detailOpen: false
+        readonly property bool showList: !root.compact || !detailOpen
+        readonly property bool showDetail: !root.compact || detailOpen
+
+        // A drill-down inside a section (Module Inspector → Interface) is
+        // the first thing back closes.
+        readonly property bool nestedOpen:
+            selectedIndex === sectionModuleInspector && moduleInspector.showingInterface
+
+        function openSection(i) { selectedIndex = i; detailOpen = true }
+        function goBack() {
+            if (nestedOpen) moduleInspector.showingInterface = false
+            else detailOpen = false
+        }
+    }
+
+    // Phone back key / Esc / Alt+Left close the open section in compact.
+    Shortcut {
+        sequences: [StandardKey.Back, "Esc"]
+        context: Qt.WindowShortcut
+        enabled: root.visible && root.compact && d.detailOpen
+        onActivated: d.goBack()
     }
 
     // 0 in a desktop window: the window's frosted glass shows through.
@@ -81,18 +121,67 @@ Rectangle {
 
     ColumnLayout {
         anchors.fill: parent
-        anchors.margins: Theme.spacing.xxlarge
-        spacing: Theme.spacing.xlarge
+        anchors.leftMargin: Theme.pageMargin(root.width)
+        anchors.rightMargin: Theme.pageMargin(root.width)
+        anchors.topMargin: root.compact ? Theme.spacing.medium : Theme.pageMargin(root.width)
+        anchors.bottomMargin: root.compact ? Theme.spacing.large : Theme.pageMargin(root.width)
+        spacing: root.compact ? Theme.spacing.medium : Theme.spacing.xlarge
+
+        // ─── Compact back row (a section is open) ───
+        // "‹ Settings": the whole row is the 44 px target and names where
+        // back goes. The section keeps its own title below it.
+        AbstractButton {
+            id: backRow
+            objectName: "settings.back"
+            visible: root.compact && d.detailOpen
+            Layout.fillWidth: true
+            Layout.leftMargin: -Theme.spacing.small
+            implicitHeight: Theme.minTouchTarget
+            Accessible.name: qsTr("Back")
+            onClicked: d.goBack()
+
+            background: Rectangle {
+                radius: Theme.spacing.radiusLarge
+                color: backRow.pressed ? Theme.components.listItem.backgroundPressed : "transparent"
+            }
+            contentItem: RowLayout {
+                spacing: Theme.spacing.tiny
+                LogosIcon {
+                    source: LogosIcons.arrowLeft
+                    color: Theme.palette.text
+                    Layout.preferredWidth: 20
+                    Layout.preferredHeight: 20
+                    Layout.leftMargin: Theme.spacing.small
+                }
+                LogosText {
+                    Layout.fillWidth: true
+                    text: d.nestedOpen ? qsTr("Module Inspector") : qsTr("Settings")
+                    font.pixelSize: Theme.typography.primaryText
+                    font.weight: Theme.typography.weightMedium
+                    color: Theme.palette.text
+                    elide: Text.ElideRight
+                }
+            }
+        }
 
         // ─── Header ───
         // Title + subtitle on the left; when an inspector is selected, a
         // page-level search bar joins on the right — same layout as
         // AppManagerView so the two feel familiar side by side.
-        RowLayout {
+        // Compact: the title block only on the Sections list, and the search
+        // bar on its own full-width line above an open inspector.
+        GridLayout {
             Layout.fillWidth: true
-            spacing: Theme.spacing.xlarge
+            visible: !root.compact || (d.detailOpen && d.searchable && !d.nestedOpen)
+            columns: root.compact ? 1 : 3
+            columnSpacing: Theme.spacing.xlarge
+            rowSpacing: Theme.spacing.medium
 
+            // Compact: the shell's title bar already says "Settings"; the
+            // Sections list starts at the top instead of under a second title.
             ColumnLayout {
+                id: titleBlock
+                visible: !root.compact
                 Layout.fillWidth: true
                 spacing: Theme.spacing.tiny
 
@@ -110,20 +199,26 @@ Rectangle {
                 }
             }
 
-            Item { Layout.fillWidth: true }
+            Item { Layout.fillWidth: true; visible: !root.compact }
 
             LogosSearchBar {
                 id: searchBar
                 objectName: "settings.searchField"
-                visible: d.searchable
+                visible: d.searchable && d.showDetail && !(root.compact && d.nestedOpen)
                 Layout.alignment: Qt.AlignRight
-                Layout.preferredWidth: 605
-                Layout.minimumWidth: 200
+                Layout.fillWidth: root.compact
+                Layout.preferredWidth: root.compact ? -1 : 605
+                Layout.minimumWidth: root.compact ? 0 : 200
+                // Shrinks beside the title rather than running off the right edge.
+                Layout.maximumWidth: root.compact ? Number.POSITIVE_INFINITY
+                    : Math.max(200, root.width - 2 * Theme.pageMargin(root.width)
+                                    - titleBlock.implicitWidth - 2 * Theme.spacing.xlarge)
                 text: d.searchText
                 placeholderText: d.selectedIndex === d.sectionAppsInspector
                                  ? qsTr("Search apps…")
                                  : qsTr("Search modules…")
-                shortcutHint: searchShortcut.nativeText
+                // No keyboard-shortcut hint on a phone.
+                shortcutHint: root.compact ? "" : searchShortcut.nativeText
                 onTextChanged: {
                     if (text !== d.searchText)
                         d.searchText = text
@@ -144,6 +239,7 @@ Rectangle {
         }
 
         RowLayout {
+            id: body
             Layout.fillWidth: true
             Layout.fillHeight: true
             spacing: Theme.spacing.medium
@@ -151,10 +247,12 @@ Rectangle {
             // ─── Sections sidebar ───
             LogosListView {
                 id: sectionsList
+                visible: !root.compact
 
-                Layout.preferredWidth: 200
-                Layout.minimumWidth: 160
-                Layout.maximumWidth: 200
+                // Expanded: 200 as on desktop; medium leaves the section more room.
+                Layout.preferredWidth: d.sidebarWidth
+                Layout.minimumWidth: d.sidebarWidth
+                Layout.maximumWidth: d.sidebarWidth
                 Layout.fillHeight: true
 
                 model: d.sections
@@ -172,6 +270,7 @@ Rectangle {
 
                 delegate: LogosItemDelegate {
                     id: cell
+                    objectName: "settings.nav." + index
                     width: ListView.view.width
                     text: modelData.label
                     highlighted: ListView.isCurrentItem
@@ -181,13 +280,62 @@ Rectangle {
                     textColor: (cell.highlighted || cell.hovered)
                                    ? Theme.palette.text
                                    : Theme.palette.textTertiary
+                    implicitHeight: root.touch ? Math.max(Theme.minTouchTarget, Theme.components.listItem.height)
+                                               : Theme.components.listItem.height
                     onClicked: d.selectedIndex = index
+                }
+            }
+
+            // ─── Compact: the Sections list is the page ───
+            // One grouped card of rows; chevron = opens a section.
+            LogosScrollView {
+                id: compactSections
+                objectName: "settings.sectionsCompact"
+                visible: root.compact && !d.detailOpen
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+                clip: true
+
+                Rectangle {
+                    width: compactSections.availableWidth
+                    implicitHeight: sectionRows.implicitHeight
+                    radius: Theme.spacing.radiusXlarge
+                    color: Theme.palette.surfaceRaised
+                    clip: true
+
+                    ColumnLayout {
+                        id: sectionRows
+                        width: parent.width
+                        spacing: 0
+                        Repeater {
+                            model: d.sections
+                            delegate: LogosListRow {
+                                required property var modelData
+                                required property int index
+                                objectName: "settings.section." + index
+                                Layout.fillWidth: true
+                                title: modelData.label
+                                subtitle: modelData.hint
+                                showChevron: true
+                                showSeparator: index < d.sections.length - 1
+                                onClicked: d.openSection(index)
+                            }
+                        }
+                    }
                 }
             }
 
             // ─── Right pane ───
             Rectangle {
+                objectName: "settings.sectionPane"
+                visible: d.showDetail
                 Layout.fillWidth: true
+                // A section never widens the page: without a cap, the inspector
+                // tables' column minimums (~720 px) pushed this pane past the
+                // window's right edge at medium widths.
+                Layout.minimumWidth: 0
+                Layout.maximumWidth: Math.max(0, root.width - 2 * Theme.pageMargin(root.width)
+                                              - (root.compact ? 0 : d.sidebarWidth + Theme.spacing.medium))
                 Layout.fillHeight: true
                 color: Theme.palette.surfaceRaised
                 radius: Theme.spacing.radiusXlarge
@@ -214,6 +362,8 @@ Rectangle {
 
                     // 2 — Module Inspector (core modules).
                     ModuleInspectorView {
+                        id: moduleInspector
+                        compactBack: root.compact
                         sourceModel: root.coreModulesModel
                         loading:     root.modulesLoading
                         searchText:  d.searchText

@@ -56,12 +56,9 @@ Item {
                 id: stateTabBar
                 spacing: Theme.spacing.large
 
-                LogosTabButton { objectName: "appManager.tab.all"; text: qsTr("All"); iconSource: LogosIcons.pages
-                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
-                LogosTabButton { objectName: "appManager.tab.installed"; text: qsTr("Installed")
-                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
-                LogosTabButton { objectName: "appManager.tab.notInstalled"; text: qsTr("Not Installed")
-                                 implicitHeight: root.touch ? Theme.minTouchTarget : Theme.components.tab.height }
+                LogosTabButton { objectName: "appManager.tab.all"; text: qsTr("All"); iconSource: LogosIcons.pages }
+                LogosTabButton { objectName: "appManager.tab.installed"; text: qsTr("Installed") }
+                LogosTabButton { objectName: "appManager.tab.notInstalled"; text: qsTr("Not Installed") }
             }
 
             Item { Layout.fillWidth: true }
@@ -84,36 +81,27 @@ Item {
                 id: moreMenu
                 objectName: "appManager.moreMenu"
 
-                AppCheckMenuItem {
+                LogosMenuItem {
                     objectName: "appManager.more.reload"
-                    // Same left gutter as the checkable row: one text column.
-                    checkable: false
-                    touch: true
                     text: qsTr("Reload")
                     enabled: !root.loading
                     onTriggered: root.reloadClicked()
                 }
-                AppCheckMenuItem {
+                LogosMenuItem {
                     objectName: "appManager.more.repositories"
-                    // Same left gutter as the checkable row: one text column.
-                    checkable: false
-                    touch: true
                     text: qsTr("Manage Repositories")
                     onTriggered: root.repositoriesClicked()
                 }
                 LogosMenuSeparator {}
-                AppCheckMenuItem {
+                LogosMenuItem {
                     objectName: "appManager.more.showUnavailable"
-                    touch: true
+                    checkable: true
                     text: qsTr("Show unavailable")
                     checked: root.showUnavailable
                     onTriggered: root.showUnavailableRequested(checked)
                 }
-                AppCheckMenuItem {
+                LogosMenuItem {
                     objectName: "appManager.more.viewMode"
-                    // Same left gutter as the checkable row: one text column.
-                    checkable: false
-                    touch: true
                     text: root.viewMode === "grid" ? qsTr("Show as list") : qsTr("Show as grid")
                     onTriggered: root.viewModeChangeRequested(root.viewMode === "grid" ? "list" : "grid")
                 }
@@ -163,9 +151,9 @@ Item {
                 id: filterMenu
                 objectName: "appManager.filterMenu"
 
-                AppCheckMenuItem {
+                LogosMenuItem {
                     objectName: "appManager.showUnavailableItem"
-                    touch: root.touch
+                    checkable: true
                     text: qsTr("Show unavailable")
                     checked: root.showUnavailable
                     onTriggered: root.showUnavailableRequested(checked)

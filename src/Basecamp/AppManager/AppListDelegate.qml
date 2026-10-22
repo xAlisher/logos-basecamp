@@ -125,7 +125,6 @@ ItemDelegate {
 
     AppContextMenu {
         id: contextMenu
-        touch: root.touch
         onOpenRequested:      (name, repo) => root.appClicked(name, repo)
         onDetailsRequested:   (name, repo) => root.detailsRequested(name, repo)
         onInstallRequested:   (name, repo) => root.installRequested(name, repo)

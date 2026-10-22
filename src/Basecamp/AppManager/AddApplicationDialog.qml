@@ -26,7 +26,18 @@ Dialog {
     //                      the primary full width and last.
     readonly property real hostWidth: parent ? parent.width : width
     readonly property bool compact: Theme.windowClass(hostWidth) === "compact"
-    readonly property bool touch: compact || Theme.density === "touch"
+    // The dialog lives in the overlay's own QML engine: while it is open as a
+    // phone page, it tells that engine's Theme so DS controls inside it (the
+    // version pickers and their dropdown rows, checkboxes) floor at 44 px.
+    Binding {
+        target: Theme
+        property: "compactWindow"
+        when: root.visible
+        value: root.compact
+        restoreMode: Binding.RestoreValue
+    }
+    Component.onDestruction: Theme.compactWindow = false
+    readonly property bool touch: Theme.touch
 
     signal installRequested(string name, string repositoryUrl)
     signal launchRequested(string name)

@@ -45,7 +45,20 @@ Rectangle {
     //                     into the panel's ⋯ menu; tiles get narrower cells.
     readonly property string windowClass: Theme.windowClass(width)
     readonly property bool compact: windowClass === "compact"
-    readonly property bool touch: compact || Theme.density === "touch"
+    // DS controls in this engine floor at 44 px while the view is phone-narrow
+    // (Theme.touch). Each QML engine has its own Theme, and this view's engine
+    // is the shell's content widget, so the view sets it.
+    // Only while shown: Settings' engine keeps a hidden copy of this view,
+    // and the visible screen in an engine must be the one that decides.
+    Binding {
+        target: Theme
+        property: "compactWindow"
+        when: root.visible && root.width > 0
+        value: Theme.windowClass(root.width) === "compact"
+        restoreMode: Binding.RestoreValue
+    }
+    Component.onDestruction: Theme.compactWindow = false
+    readonly property bool touch: Theme.touch
     // Carry a query across a class change: unfold the compact search with it,
     // or hand it back to the full search bar.
     onCompactChanged: {
@@ -144,6 +157,13 @@ Rectangle {
                 visible: !compactSearch.expanded
                 Layout.fillWidth: true
                 Layout.leftMargin: -Theme.spacing.small
+                // A fixed implicit width: the bar's layout gives the picker
+                // its width, and the label is capped by that width below. When
+                // the implicit width came from the label, the two fed each other
+                // and, in a hidden copy of this view (Settings' engine keeps one
+                // in its StackLayout), the layout never settled: the main
+                // thread spun at 90% when Settings opened at phone width.
+                implicitWidth: Theme.minTouchTarget
                 implicitHeight: Theme.minTouchTarget
                 Accessible.name: qsTr("Category: %1").arg(d.selectedCategory)
                 onClicked: categoryMenu.popupUnder(categoryPicker)
@@ -161,7 +181,7 @@ Rectangle {
                         font.weight: Theme.typography.weightMedium
                         color: Theme.palette.text
                         elide: Text.ElideRight
-                        Layout.maximumWidth: categoryPicker.width - 40
+                        Layout.maximumWidth: Math.max(0, categoryPicker.width - 40)
                     }
                     LogosIcon {
                         source: LogosIcons.triangleDown
@@ -179,12 +199,12 @@ Rectangle {
 
                 Instantiator {
                     model: d.categories
-                    delegate: AppCheckMenuItem {
+                    delegate: LogosMenuItem {
                         objectName: "appManager.categoryItem." + modelData
                         required property var modelData
                         required property int index
                         text: modelData
-                        touch: true
+                        checkable: true
                         checked: index === d.selectedCategoryIndex
                         onTriggered: d.selectedCategoryIndex = index
                     }
@@ -298,9 +318,6 @@ Rectangle {
                     id: cell
                     objectName: "appManager.category." + modelData
                     width: ListView.view.width
-                    implicitHeight: root.touch
-                                    ? Math.max(Theme.minTouchTarget, Theme.components.listItem.height)
-                                    : Theme.components.listItem.height
                     text: modelData
                     highlighted: ListView.isCurrentItem
                     radius: Theme.spacing.radiusLarge

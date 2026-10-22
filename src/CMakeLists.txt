@@ -140,7 +140,6 @@ qt_add_qml_module(basecamp_appmanager_qml
         Basecamp/AppManager/AppManagerPanelHeader.qml
         Basecamp/AppManager/AppRepoSection.qml
         Basecamp/AppManager/AppContextMenu.qml
-        Basecamp/AppManager/AppCheckMenuItem.qml
         Basecamp/AppManager/AppGrid.qml
         Basecamp/AppManager/AppGridDelegate.qml
         Basecamp/AppManager/AppListDelegate.qml

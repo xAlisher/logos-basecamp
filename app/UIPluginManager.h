@@ -147,6 +147,13 @@ public slots:
     // UI module lifecycle
     void loadUiModule(const QString& moduleName);
     void unloadUiModule(const QString& moduleName);
+    // Load an app without showing it: no window or tab is asked for, so its
+    // QML runs and draws nowhere (the `search` role's holder, which only ranks).
+    // Opening it later (the launcher, loadUiModule) shows it as usual.
+    void loadInBackground(const QString& moduleName);
+    bool isBackgroundApp(const QString& moduleName) const { return m_backgroundApps.contains(moduleName); }
+    bool isLoaded(const QString& moduleName) const { return m_loadedApps.contains(moduleName); }
+    bool isShuttingDown() const { return m_shuttingDown; }
     void activateApp(const QString& appName);
 
     // Local unload-cascade confirmation flow, called from QML dialogs.
@@ -354,6 +361,8 @@ private:
 
     // App launcher
     QSet<QString> m_loadedApps;
+    // Loaded with loadInBackground() and not shown since.
+    QSet<QString> m_backgroundApps;
     QString       m_currentVisibleApp;
 
     // Recently-closed list, persisted under LogosBasecampPaths::baseDirectory().

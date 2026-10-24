@@ -282,6 +282,14 @@ void UIPluginManager::loadUiModule(const QString& moduleName)
 
     if (m_loadedUiModules.contains(moduleName) || m_qmlPluginWidgets.contains(moduleName)) {
         qDebug() << "Module" << moduleName << "is already loaded";
+        if (m_backgroundApps.remove(moduleName)) {
+            // Running unseen until now: the shell has never had its window.
+            if (QWidget* widget = m_uiModuleWidgets.value(moduleName)) {
+                emit launcherAppsChanged();
+                emit pluginWindowRequested(widget, moduleName);
+                emit navigateToApps();
+            }
+        }
         activateApp(moduleName);
         return;
     }
@@ -431,8 +439,12 @@ void UIPluginManager::onPluginLoaded(const QString& name, QWidget* widget,
 
     emit uiModulesChanged();
     emit launcherAppsChanged();
-    emit pluginWindowRequested(widget, name);
-    emit navigateToApps();
+    if (m_backgroundApps.contains(name)) {
+        qInfo().noquote() << "Loaded" << name << "in the background (no window)";
+    } else {
+        emit pluginWindowRequested(widget, name);
+        emit navigateToApps();
+    }
 
     // Last, and after the window exists: a broker draining its activation queue
     // dispatches into the view immediately, so it must already be mounted.
@@ -444,6 +456,7 @@ void UIPluginManager::onPluginLoaded(const QString& name, QWidget* widget,
 void UIPluginManager::onPluginLoadFailed(const QString& name, const QString& error)
 {
     qWarning() << "Failed to load UI module" << name << ":" << error;
+    m_backgroundApps.remove(name);
     // Surface to the user, not just the log (forwarded to the QML overlay).
     emit pluginLoadFailedNotice(name, error);
 }
@@ -541,7 +554,8 @@ void UIPluginManager::unloadUiModuleImpl(const QString& moduleName)
     QWidget* widget = m_uiModuleWidgets.value(moduleName);
     IComponent* component = m_loadedUiModules.value(moduleName);
 
-    if (widget) {
+    const bool background = m_backgroundApps.remove(moduleName);
+    if (widget && !background) {
         emit pluginWindowRemoveRequested(widget);
     }
 
@@ -571,7 +585,7 @@ void UIPluginManager::unloadUiModuleImpl(const QString& moduleName)
     //     Restoring what was open at exit is a different feature.
     //   * teardownUiPluginWidgetNow — uninstall; a removed app is not "recent".
     //   * shell internals (main_ui) — never launchable.
-    if (m_recentlyClosed && !m_shuttingDown && !isShellInternalApp(moduleName)) {
+    if (m_recentlyClosed && !m_shuttingDown && !background && !isShellInternalApp(moduleName)) {
         m_recentlyClosed->record(moduleName);
         emit recentlyClosedAppsChanged();
     }
@@ -587,8 +601,19 @@ void UIPluginManager::unloadUiModuleImpl(const QString& moduleName)
     qDebug() << "Successfully unloaded UI module:" << moduleName;
 }
 
+void UIPluginManager::loadInBackground(const QString& moduleName)
+{
+    if (moduleName.isEmpty() || m_shuttingDown
+        || m_loadedUiModules.contains(moduleName) || m_qmlPluginWidgets.contains(moduleName))
+        return;   // already running, shown or not
+    m_backgroundApps.insert(moduleName);
+    loadUiModule(moduleName);
+}
+
 void UIPluginManager::activateApp(const QString& appName)
 {
+    if (m_backgroundApps.contains(appName))
+        return;   // nothing to bring forward
     QWidget* widget = m_uiModuleWidgets.value(appName);
     if (!widget) return;
 
@@ -753,7 +778,8 @@ QVariantMap UIPluginManager::buildAppRow(const QString& pluginName) const
     const QString metaDn =
         m_uiPluginMetadata.value(pluginName).value("displayName").toString();
     app["displayName"] = metaDn;
-    app["isLoaded"] = m_loadedApps.contains(pluginName);
+    // Running unseen (loadInBackground) is not "open" to the user.
+    app["isLoaded"] = m_loadedApps.contains(pluginName) && !m_backgroundApps.contains(pluginName);
     app["iconPath"] = pluginIconUrl(pluginName);
     app["supportsFullBleedIcon"] =
         AppsModel::supportsFullBleedIcon(pluginManifestVersion(pluginName));

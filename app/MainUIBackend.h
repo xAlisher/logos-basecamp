@@ -267,6 +267,10 @@ public:
     Q_INVOKABLE void acceptHomeQuery() { emit homeQueryAccepted(); }
     QString homeQuery() const { return m_homeQuery; }
     bool homeSearchInBar() const { return m_homeSearchInBar; }
+    // What the bar reads while it searches home ("Search transactions"),
+    // set by the home app; "" = the shell's own ("Search apps…").
+    Q_INVOKABLE void setHomePlaceholder(const QString& text);
+    Q_INVOKABLE QString homePlaceholder() const { return m_homePlaceholder; }
 
     // The shell's preferences object, handed over through IShellHost and given
     // only to the settings role's app (ShellApi).
@@ -426,6 +430,7 @@ signals:
     void launcherSearchRequested(const QString& query);
     void homeQueryChanged();
     void homeQueryAccepted();
+    void homePlaceholderChanged();
     // From the home app: the shell turns the New tab into this app / role.
     void homeLaunchRequested(const QString& name);
     void homeRoleRequested(const QString& role);
@@ -610,6 +615,7 @@ private:
     QString              m_pendingSettingsSection;
     QString              m_pendingLauncherSearch;
     QString              m_homeQuery;
+    QString              m_homePlaceholder;
     bool                 m_homeSearchInBar = false;
     LinkRequestCoordinator* m_linkRequests = nullptr;
     // False until wireIntents() has done its bootstrap rebuild, so the

@@ -390,6 +390,11 @@ void ShellApi::launch(const QString& name)
     if (holds("home")) emit m_backend->homeLaunchRequested(name);
 }
 
+void ShellApi::setBarPlaceholder(const QString& text)
+{
+    if (holds("home")) m_backend->setHomePlaceholder(text);
+}
+
 // Navigation any app could already ask for (basecamp.apps.launch). From home,
 // the shell also turns the New tab into whatever opens.
 bool ShellApi::openRole(const QString& role)

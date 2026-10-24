@@ -780,6 +780,15 @@ void MainUIBackend::setHomeQuery(const QString& text, bool inBar)
     emit homeQueryChanged();
 }
 
+void MainUIBackend::setHomePlaceholder(const QString& text)
+{
+    // One line of plain text, short enough for the bar.
+    QString clean = text.simplified().left(60);
+    if (m_homePlaceholder == clean) return;
+    m_homePlaceholder = clean;
+    emit homePlaceholderChanged();
+}
+
 QString MainUIBackend::takePendingSettingsSection()
 {
     return std::exchange(m_pendingSettingsSection, QString());

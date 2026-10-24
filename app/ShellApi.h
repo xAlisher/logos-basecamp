@@ -147,6 +147,10 @@ public:
 
     // home: turn the New tab this page is shown in into `name`.
     Q_INVOKABLE void launch(const QString& name);
+    // home: what the shell's bar reads while it searches this page, naming
+    // the active filter ("Search transactions"); "" gives the shell's own back.
+    // Plain text, one line, at most 60 characters.
+    Q_INVOKABLE void setBarPlaceholder(const QString& text);
 
     // ── search (SHELL-OBJECTS-SPEC §5) ───────────────────────────────────
     // The envelopes `filter` allows ({ types?, apps?, kinds?, subjects?,

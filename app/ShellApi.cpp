@@ -170,6 +170,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
             });
     connect(backend, &MainUIBackend::modulesLoadingChanged, this, &ShellApi::modulesChanged);
     connect(backend, &MainUIBackend::notificationAppsChanged, this, &ShellApi::notificationsChanged);
+    connect(backend, &MainUIBackend::searchAppsChanged, this, &ShellApi::searchChanged);
     if (QObject* center = backend->notifications())
         connect(center, SIGNAL(desktopChanged()), this, SIGNAL(notificationsChanged()));
     connect(backend, &MainUIBackend::launcherAppsChanged, this, &ShellApi::appsChanged);
@@ -181,6 +182,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit repositoriesChanged();
         emit modulesChanged();
         emit notificationsChanged();
+        emit searchChanged();
         emit prefsChanged();
         emit appsChanged();
         emit homeQueryChanged();
@@ -226,6 +228,10 @@ QVariantList ShellApi::buildCommits() const { return m_backend ? m_backend->prop
 QVariantList ShellApi::notificationApps() const
 {
     return holds("settings") ? withServedIcons(m_backend->notificationApps()) : QVariantList();
+}
+QVariantList ShellApi::searchApps() const
+{
+    return holds("settings") ? withServedIcons(m_backend->searchApps()) : QVariantList();
 }
 QObject* ShellApi::prefs() const           { return holds("settings") ? m_backend->shellPreferences() : nullptr; }
 QString ShellApi::pendingSection() const   { return holds("settings") ? m_backend->pendingSettingsSection() : QString(); }
@@ -274,6 +280,11 @@ QString ShellApi::callCoreModuleMethod(const QString& name, const QString& metho
 void ShellApi::setNotificationsEnabled(const QString& app, bool enabled)
 {
     if (holds("settings")) m_backend->setNotificationsEnabled(app, enabled);
+}
+
+void ShellApi::setSearchEnabled(const QString& app, bool enabled)
+{
+    if (holds("settings")) m_backend->setSearchEnabled(app, enabled);
 }
 
 QVariantList ShellApi::roleCandidates(const QString& role) const

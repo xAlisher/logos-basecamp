@@ -13,11 +13,13 @@ void registerWith(IntentRegistry* registry,
 
     registry->registerShellUses(shellModuleName,
                                 { QStringLiteral("packages.show"),
-                                  QStringLiteral("packages.install") });
+                                  QStringLiteral("packages.install"),
+                                  kObjectsActionIntent });
 
     QStringList provides = kNavigationIntents;
     provides += kPackageConfirmIntents;
     provides << kNotificationsPostIntent;
+    provides << kObjectsPublishIntent << kObjectsRetractIntent;
 
     registry->registerShellProvider(shellModuleName, provides,
                                     kNavigationIntents, displayName, iconSource);

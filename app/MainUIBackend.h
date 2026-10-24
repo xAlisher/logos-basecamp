@@ -101,6 +101,13 @@ class MainUIBackend : public QObject {
     // Apps whose manifest declares basecamp.notifications.post, for Settings:
     // { name, displayName, icon, enabled }.
     Q_PROPERTY(QVariantList notificationApps READ notificationApps NOTIFY notificationAppsChanged)
+    // Shell objects (SHELL-OBJECTS-SPEC.md): what apps publish for search and
+    // home. Read-only from QML (count, list(filter), types(), get(id)); for the
+    // search role and views in phase 2, and for headless tests now.
+    Q_PROPERTY(QObject* objectStore READ objectStore CONSTANT)
+    // Apps whose manifest declares basecamp.objects.publish, for Settings →
+    // Search: { name, displayName, icon, enabled, count }.
+    Q_PROPERTY(QVariantList searchApps READ searchApps NOTIFY searchAppsChanged)
     // Most-recently-closed apps, persisted across restarts.
     Q_PROPERTY(QVariantList recentlyClosedApps READ recentlyClosedApps NOTIFY recentlyClosedAppsChanged)
     // role -> the app filling it ("" when nothing can): home, launcher, packages,
@@ -197,6 +204,18 @@ public:
     QObject* notifications() const;
     QVariantList notificationApps() const;
     Q_INVOKABLE void setNotificationsEnabled(const QString& app, bool enabled);
+    QObject* objectStore() const;
+    QVariantList searchApps() const;
+    // Off deletes what `app` published at once and drops what it sends while off.
+    Q_INVOKABLE void setSearchEnabled(const QString& app, bool enabled);
+    // A view (or a test) acting on object `id`: `open`, or one of the object's
+    // own action ids, with `text` for an `input: "text"` action. Sent as
+    // `objects.action` { key, action, text? } to the publisher alone; `open`
+    // brings the publisher forward first. Returns the request id the answer is
+    // logged under ("" when refused: unknown object or action, or an action the
+    // publisher cannot hear).
+    Q_INVOKABLE QString raiseObjectAction(const QString& id, const QString& action,
+                                          const QString& text = QString());
 
     // ── Roles ───────────────────────────────────────────────────────────
     QVariantMap roles() const;
@@ -377,6 +396,9 @@ public slots:
 
 signals:
     void notificationAppsChanged();
+    void searchAppsChanged();
+    // The publisher answered an action raised with raiseObjectAction().
+    void objectActionAnswered(const QString& requestId, bool ok, const QString& error);
     void rolesChanged();
     void shellPreferencesChanged();
     void settingsSectionRequested(const QString& section);
@@ -595,6 +617,8 @@ private:
     CoreModuleManager* m_coreModuleManager;
     UIPluginManager*   m_uiPluginManager;
     class NotificationCenter* m_notifications = nullptr;
+    class ObjectStore*        m_objects = nullptr;
+    quint64                   m_nextObjectAction = 0;
     PackageCoordinator*    m_packageCoordinator;
     ModuleInstanceModel* m_uiModulesModel;
     ModuleInstanceModel* m_coreModulesModel;

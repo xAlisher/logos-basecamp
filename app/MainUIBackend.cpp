@@ -865,9 +865,9 @@ void MainUIBackend::ensureSearchHolderRunning()
         return;
     const QString holder = roleHolder(ObjectSearch::searchRole());
     if (!m_backgroundSearchApp.isEmpty() && m_backgroundSearchApp != holder) {
-        // The role moved on: stop the previous holder if it is still unseen.
-        if (m_uiPluginManager->isBackgroundApp(m_backgroundSearchApp))
-            m_uiPluginManager->unloadUiModule(m_backgroundSearchApp);
+        // The role moved on: stop the previous holder if it is still unseen,
+        // still loading or still parked (a load that lands later is unloaded).
+        m_uiPluginManager->cancelBackground(m_backgroundSearchApp);
         m_backgroundSearchApp.clear();
     }
     if (holder.isEmpty() || m_uiPluginManager->isLoaded(holder)

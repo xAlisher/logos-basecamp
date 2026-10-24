@@ -280,7 +280,21 @@ QVariantList UIPluginManager::uiModules() const
 
 void UIPluginManager::loadUiModule(const QString& moduleName)
 {
+    startLoad(moduleName, false);
+}
+
+// `background`: loadInBackground() asked, not the user or an intent. A user's
+// load of an app already loading in the background takes that load over, so
+// it finishes as a shown app (PluginLoader drops the second request).
+void UIPluginManager::startLoad(const QString& moduleName, bool background)
+{
     qDebug() << "Loading UI module:" << moduleName;
+
+    if (!background && !m_loadedUiModules.contains(moduleName)
+        && !m_qmlPluginWidgets.contains(moduleName)) {
+        m_backgroundApps.remove(moduleName);
+        m_cancelledBackgroundLoads.remove(moduleName);
+    }
 
     if (m_loadedUiModules.contains(moduleName) || m_qmlPluginWidgets.contains(moduleName)) {
         qDebug() << "Module" << moduleName << "is already loaded";
@@ -441,8 +455,17 @@ void UIPluginManager::onPluginLoaded(const QString& name, QWidget* widget,
 
     emit uiModulesChanged();
     emit launcherAppsChanged();
+    const bool cancelled = m_cancelledBackgroundLoads.remove(name);
     if (m_backgroundApps.contains(name)) {
         qInfo().noquote() << "Loaded" << name << "in the background (no window)";
+        if (cancelled) {
+            // No longer wanted while it loaded (cancelBackground): stop it once
+            // this load has finished unwinding.
+            qInfo().noquote() << "Unloading" << name << ": its background load was cancelled";
+            QTimer::singleShot(0, this, [this, name]() {
+                if (m_backgroundApps.contains(name)) unloadUiModule(name);
+            });
+        }
     } else {
         emit pluginWindowRequested(widget, name);
         emit navigateToApps();
@@ -459,6 +482,7 @@ void UIPluginManager::onPluginLoadFailed(const QString& name, const QString& err
 {
     qWarning() << "Failed to load UI module" << name << ":" << error;
     m_backgroundApps.remove(name);
+    m_cancelledBackgroundLoads.remove(name);
     // Surface to the user, not just the log (forwarded to the QML overlay).
     emit pluginLoadFailedNotice(name, error);
 }
@@ -624,8 +648,24 @@ void UIPluginManager::loadInBackground(const QString& moduleName)
         }
         return;
     }
+    m_cancelledBackgroundLoads.remove(moduleName);   // wanted again
     m_backgroundApps.insert(moduleName);
-    loadUiModule(moduleName);
+    startLoad(moduleName, true);
+}
+
+void UIPluginManager::cancelBackground(const QString& moduleName)
+{
+    m_pendingBackgroundLoads.remove(moduleName);   // parked, never started
+    if (!m_backgroundApps.contains(moduleName))
+        return;   // not ours any more: the user opened it
+    if (m_loadedApps.contains(moduleName)) {
+        unloadUiModule(moduleName);
+    } else if (m_pluginLoader->isLoading(moduleName)) {
+        // Still loading: unloaded as soon as it lands (onPluginLoaded).
+        m_cancelledBackgroundLoads.insert(moduleName);
+    } else {
+        m_backgroundApps.remove(moduleName);
+    }
 }
 
 void UIPluginManager::activateApp(const QString& appName)

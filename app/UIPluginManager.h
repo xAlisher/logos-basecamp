@@ -151,6 +151,10 @@ public slots:
     // QML runs and draws nowhere (the `search` role's holder, which only ranks).
     // Opening it later (the launcher, loadUiModule) shows it as usual.
     void loadInBackground(const QString& moduleName);
+    // Stop a background load that is no longer wanted, wherever it is:
+    // parked, loading (unloaded when it lands) or running unseen. An app the
+    // user has opened since is left alone.
+    void cancelBackground(const QString& moduleName);
     bool isBackgroundApp(const QString& moduleName) const { return m_backgroundApps.contains(moduleName); }
     bool isLoaded(const QString& moduleName) const { return m_loadedApps.contains(moduleName); }
     bool isShuttingDown() const { return m_shuttingDown; }
@@ -255,6 +259,9 @@ private slots:
     void onUiPluginUnloadFinished();
 
 private:
+    // loadUiModule's body; `background` from loadInBackground().
+    void startLoad(const QString& moduleName, bool background);
+
     // Local unload-cascade pending slot. Set when unloadUiModule /
     // unloadCoreModule detects a loaded dependent and asks the user to
     // confirm the cascade. No package_manager involvement — this is purely
@@ -368,6 +375,8 @@ private:
     QSet<QString> m_loadedApps;
     // Loaded with loadInBackground() and not shown since.
     QSet<QString> m_backgroundApps;
+    // Background loads cancelled while in flight (cancelBackground).
+    QSet<QString> m_cancelledBackgroundLoads;
     QString       m_currentVisibleApp;
 
     // Recently-closed list, persisted under LogosBasecampPaths::baseDirectory().

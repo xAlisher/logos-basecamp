@@ -313,6 +313,9 @@ set(PROJECT_SOURCES
     MainUIBackend.cpp
     NotificationCenter.cpp
     ObjectStore.cpp
+    ObjectRanker.cpp
+    ObjectResults.cpp
+    ObjectSearch.cpp
     DesktopNotifier.cpp
     ShellIntents.cpp
 

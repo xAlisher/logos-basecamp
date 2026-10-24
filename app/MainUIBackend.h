@@ -206,6 +206,10 @@ public:
     Q_INVOKABLE void setNotificationsEnabled(const QString& app, bool enabled);
     QObject* objectStore() const;
     QVariantList searchApps() const;
+    // Emits searchAppsChanged only if searchApps() differs from what was last
+    // announced. Called at once for a switch or a registry rebuild, and through
+    // a coalescing timer for store activity.
+    void refreshSearchApps();
     // Off deletes what `app` published at once and drops what it sends while off.
     Q_INVOKABLE void setSearchEnabled(const QString& app, bool enabled);
     // A view (or a test) acting on object `id`: `open`, or one of the object's
@@ -619,6 +623,10 @@ private:
     class NotificationCenter* m_notifications = nullptr;
     class ObjectStore*        m_objects = nullptr;
     quint64                   m_nextObjectAction = 0;
+    // searchAppsChanged fires when a ROW changes, not on every publish: see
+    // refreshSearchApps(). The rows last announced, and the coalescing timer.
+    QVariantList              m_lastSearchApps;
+    class QTimer*             m_searchAppsTimer = nullptr;
     PackageCoordinator*    m_packageCoordinator;
     ModuleInstanceModel* m_uiModulesModel;
     ModuleInstanceModel* m_coreModulesModel;

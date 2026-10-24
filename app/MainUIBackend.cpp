@@ -111,10 +111,25 @@ MainUIBackend::MainUIBackend(LogosAPI* logosAPI, ICoreRuntime* core,
     m_objects->setIconResolver([this](const QString& app) {
         return m_uiPluginManager->pluginIconUrl(app);
     });
+    // NOT a per-publish signal. ObjectStore::changed fires on every publish,
+    // retract, expiry and markSeen by any app, and searchAppsChanged reaches
+    // QML (ShellApi::searchChanged) — forwarded as is, it would be a clock of
+    // other apps' activity: when a message or a payment arrived, when the user
+    // read it. So store activity is coalesced (one look per second at most)
+    // and announced only when a Settings row really changed — an app's switch,
+    // the set of publishing apps, or its count. A same-key update, a markSeen
+    // or a publish-then-retract inside the window says nothing. The switch
+    // itself is the user's own act and is answered at once.
+    m_searchAppsTimer = new QTimer(this);
+    m_searchAppsTimer->setSingleShot(true);
+    m_searchAppsTimer->setInterval(1000);
+    connect(m_searchAppsTimer, &QTimer::timeout, this, &MainUIBackend::refreshSearchApps);
     connect(m_objects, &ObjectStore::disabledAppsChanged,
-            this, &MainUIBackend::searchAppsChanged);
-    connect(m_objects, &ObjectStore::changed,
-            this, &MainUIBackend::searchAppsChanged);
+            this, &MainUIBackend::refreshSearchApps);
+    connect(m_objects, &ObjectStore::changed, this, [this]() {
+        if (!m_searchAppsTimer->isActive())
+            m_searchAppsTimer->start();
+    });
     // While Basecamp is in the background, the desktop shows them too.
     auto* desktop = new DesktopNotifier(m_notifications, this);
     desktop->setNameResolver([this](const QString& app) { return displayNameFor(app); });
@@ -786,7 +801,7 @@ void MainUIBackend::rebuildIntentRegistry()
     // After the bootstrap only — the constructor-time rebuild sees no apps.
     if (m_objects && m_intentRegistryBootstrapped)
         m_objects->retainApps(m_intentRegistry->modulesUsing(kObjectsPublishIntent));
-    emit searchAppsChanged();
+    refreshSearchApps();
 
     // THE COLD-START GATE, and it must skip the bootstrap call above.
     //
@@ -1278,6 +1293,15 @@ QVariantList MainUIBackend::searchApps() const
         };
     }
     return out;
+}
+
+void MainUIBackend::refreshSearchApps()
+{
+    const QVariantList rows = searchApps();
+    if (rows == m_lastSearchApps)
+        return;
+    m_lastSearchApps = rows;
+    emit searchAppsChanged();
 }
 
 void MainUIBackend::setSearchEnabled(const QString& app, bool enabled)

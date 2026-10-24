@@ -52,6 +52,10 @@ inline const QString kObjectsRetractIntent =
 // namespace from any app's `provides`. A publisher that wants actions declares
 // it in "provides"; the shell names it as the only provider (submitTo), so a
 // second app providing the same intent never hears another app's actions.
+// And the shell is its only permitted REQUESTER (registerWith restricts it):
+// an app declaring it in `uses` is answered `unavailable`. A publisher should
+// still accept it only from requester "main_ui" — belt and braces, and the
+// rule an app can check on its own side.
 inline const QString kObjectsActionIntent = QStringLiteral("objects.action");
 
 // Bring a named app forward: `{ "app": "wallet_ui" }`.

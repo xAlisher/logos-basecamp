@@ -18,6 +18,8 @@
 #include <QTemporaryDir>
 #include <QTest>
 
+#include <cmath>
+#include <limits>
 #include <memory>
 
 namespace {
@@ -195,6 +197,15 @@ void TestObjectStore::testValidationRefusesBadShapes_data()
     row("progress over 100", { { QStringLiteral("progress"), 101 } });
     row("negative progress", { { QStringLiteral("progress"), -1 } });
     row("time not number", { { QStringLiteral("time"), QStringLiteral("today") } });
+    // Past the largest JS Date: converting it to qint64 would be undefined (on
+    // x86, 1e20 becomes INT64_MIN and the object expires on arrival).
+    row("time past a JS Date", { { QStringLiteral("time"), 1e19 } });
+    row("expires past a JS Date", { { QStringLiteral("expires"), 1e20 } });
+    // NaN slips past every `< 0` / `> 100` comparison: refused as a number.
+    row("NaN time", { { QStringLiteral("time"), std::nan("") } });
+    row("NaN expires", { { QStringLiteral("expires"), std::nan("") } });
+    row("NaN progress", { { QStringLiteral("progress"), std::nan("") } });
+    row("infinite expires", { { QStringLiteral("expires"), std::numeric_limits<double>::infinity() } });
 }
 
 void TestObjectStore::testValidationRefusesBadShapes()
@@ -421,6 +432,16 @@ void TestObjectStore::testExpiredObjectsAreDropped()
     past[QStringLiteral("expires")] = m_now - 1;
     QVERIFY(store->publish(kWallet, batch({ soon, past, tx(QStringLiteral("forever")) })).isEmpty());
     QCOMPARE(store->count(kWallet), 2);   // already expired: never kept
+
+    // "Never", spelled as the largest JS Date, is a far future, not a wrapped
+    // negative that expires on arrival.
+    QVariantMap never = tx(QStringLiteral("never"));
+    never[QStringLiteral("expires")] = 8.64e15;
+    QVERIFY(store->publish(kChat, batch({ never })).isEmpty());
+    QCOMPARE(store->count(kChat), 1);
+    QCOMPARE(store->get(ObjectStore::idFor(kChat, QStringLiteral("never")))
+                 .value(QStringLiteral("expires")).toLongLong(), qint64(8'640'000'000'000'000));
+    QCOMPARE(store->retract(kChat, { { QStringLiteral("all"), true } }), QString());
 
     m_now += 1000;
     QCOMPARE(store->count(kWallet), 1);

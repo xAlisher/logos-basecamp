@@ -11,6 +11,7 @@
 #include <QTimer>
 
 #include <algorithm>
+#include <cmath>
 
 namespace {
 
@@ -30,16 +31,30 @@ bool isList(const QVariant& v)
 bool isBool(const QVariant& v)   { return v.metaType().id() == QMetaType::Bool; }
 // Lenient about width, as the broker is: QML hands over Int or Double
 // depending on whether the literal had a fraction.
+//
+// FINITE, too. NaN and Infinity arrive from QML as ordinary Doubles (a
+// `Date.parse` of a bad string, a division by zero), and NaN passes every
+// `< 0` / `> 100` range check below because every comparison with it is false.
+// It would then be stored, sorted on and serialized: JSON has no NaN.
 bool isNumber(const QVariant& v)
 {
     switch (v.metaType().id()) {
     case QMetaType::Int: case QMetaType::UInt: case QMetaType::LongLong:
-    case QMetaType::ULongLong: case QMetaType::Double: case QMetaType::Float:
+    case QMetaType::ULongLong:
         return true;
+    case QMetaType::Double: case QMetaType::Float:
+        return std::isfinite(v.toDouble());
     default:
         return false;
     }
 }
+
+// The largest instant a JS Date can hold (ECMA-262 §21.4.1.1), in ms. A bound
+// on `time` and `expires` before they become qint64: converting a double past
+// qint64's range is undefined behaviour, and on x86 1e20 comes out as
+// INT64_MIN — an `expires` meant as "never" would read as long past and the
+// object would be purged straight after the publish was answered ok.
+constexpr double kMaxEpochMs = 8.64e15;
 
 // ── The v0 type table (spec §4) ──────────────────────────────────────────────
 //
@@ -398,7 +413,7 @@ QVariantMap ObjectStore::validate(const QString& app, int index, const QVariantM
         const QString n = QLatin1String(name);
         if (!in.contains(n)) continue;
         const QVariant t = in.value(n);
-        if (!isNumber(t) || t.toDouble() < 0)
+        if (!isNumber(t) || t.toDouble() < 0 || t.toDouble() > kMaxEpochMs)
             return bad(QStringLiteral("`%1` must be ms since the epoch").arg(n));
         out[n] = qint64(t.toDouble());
     }

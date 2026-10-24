@@ -170,7 +170,13 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
             });
     connect(backend, &MainUIBackend::modulesLoadingChanged, this, &ShellApi::modulesChanged);
     connect(backend, &MainUIBackend::notificationAppsChanged, this, &ShellApi::notificationsChanged);
-    connect(backend, &MainUIBackend::searchAppsChanged, this, &ShellApi::searchChanged);
+    // Gated like the event signals below, not like the plain re-read signals
+    // above: `shell` is handed to any app that merely CLAIMS a role, and even
+    // debounced (MainUIBackend::refreshSearchApps) this changes with other
+    // apps' object counts — timing a non-holder has no business observing.
+    connect(backend, &MainUIBackend::searchAppsChanged, this, [this]() {
+        if (holds("settings")) emit searchChanged();
+    });
     if (QObject* center = backend->notifications())
         connect(center, SIGNAL(desktopChanged()), this, SIGNAL(notificationsChanged()));
     connect(backend, &MainUIBackend::launcherAppsChanged, this, &ShellApi::appsChanged);

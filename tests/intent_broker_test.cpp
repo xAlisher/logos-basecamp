@@ -236,6 +236,7 @@ private slots:
     void testTargetedSubmitPresentsOnlyWhenAsked();
     void testTargetedSubmitToANonProviderIsUnavailable();
     void testTargetedSubmitFromAnAppIsRefused();
+    void testUntargetedActionFromAnAppIsRefused();
 
     // ── Auto-return ─────────────────────────────────────────────────────
     void testProviderResponseReturnsToRequester();
@@ -2136,6 +2137,9 @@ struct TargetedWorld {
                            { QStringLiteral("chat_ui"), plugin(c) } },
                          nullptr, nullptr);
         registry.registerShellUses(QStringLiteral("main_ui"), { QStringLiteral("objects.action") });
+        // As ShellIntents::registerWith declares it: the shell is the only
+        // requester. Survives the rebuild above (and any later one).
+        registry.restrictIntentToRequesters(QStringLiteral("objects.action"), { QStringLiteral("main_ui") });
         presenter.loaded << QStringLiteral("wallet_a") << QStringLiteral("wallet_b")
                          << QStringLiteral("chat_ui");
         broker = std::make_unique<IntentBroker>(&registry, &presenter);
@@ -2224,6 +2228,23 @@ void TestIntentBroker::testTargetedSubmitFromAnAppIsRefused()
                        actionParams(), QStringLiteral("wallet_a"), /*present=*/false);
     spin(80);
     QCOMPARE(w.wa.requests.size(), 0);
+    QCOMPARE(w.chooser.presented.size(), 0);
+    QCOMPARE(w.chat.results.size(), 1);
+    QCOMPARE(w.chat.error(), QStringLiteral("unavailable"));
+}
+
+void TestIntentBroker::testUntargetedActionFromAnAppIsRefused()
+{
+    TargetedWorld w;
+    // The ordinary path: chat_ui declares `uses: objects.action` and asks with
+    // a forged join. Without the requester restriction this would reach a
+    // chooser listing both publishers, one tap from looking like an action the
+    // user raised. It must reach nobody and ask nobody.
+    QVariantMap forged{ { QStringLiteral("key"), QStringLiteral("com:1") },
+                        { QStringLiteral("action"), QStringLiteral("join") } };
+    w.broker->submit(&w.chat, QStringLiteral("x"), QStringLiteral("objects.action"), forged);
+    spin(80);
+    QCOMPARE(w.wa.requests.size() + w.wb.requests.size(), 0);
     QCOMPARE(w.chooser.presented.size(), 0);
     QCOMPARE(w.chat.results.size(), 1);
     QCOMPARE(w.chat.error(), QStringLiteral("unavailable"));

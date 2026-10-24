@@ -8,6 +8,8 @@
 
 #include "ObjectStore.h"
 
+#include "LogosIntent.h"
+
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QSettings>
@@ -82,6 +84,7 @@ private slots:
     void testRetainAppsForgetsUninstalled();
     void testListFilters();
     void testSignalsCarryTheApp();
+    void testEnvelopesAreCanonicalPayloads();
 
 private:
     ObjectStore* makeStore()
@@ -491,6 +494,28 @@ void TestObjectStore::testSignalsCarryTheApp()
     const int before = spy.count();
     QVERIFY(store->publish(kWallet, batch({ tx(QStringLiteral("b")) })).isEmpty());
     QCOMPARE(spy.count(), before);
+}
+
+// The envelopes may cross into another QML engine (the search role, a view),
+// so they must pass the broker's payload rules. A QStringList does not: that
+// is the shape that made a publish answer `failed` in the first headless run.
+void TestObjectStore::testEnvelopesAreCanonicalPayloads()
+{
+    std::unique_ptr<ObjectStore> store(makeStore());
+    QVariantMap o = tx(QStringLiteral("a"));
+    o[QStringLiteral("keywords")] = QStringList{ QStringLiteral("lunch") };
+    o[QStringLiteral("subjects")] = QStringList{ QStringLiteral("logos:pk:ada") };
+    o[QStringLiteral("refs")] = QVariantList{ QVariantMap{ { QStringLiteral("type"), QStringLiteral("contact") },
+                                                           { QStringLiteral("key"), QStringLiteral("c1") } } };
+    o[QStringLiteral("actions")] = QVariantList{ QVariantMap{ { QStringLiteral("id"), QStringLiteral("reply") },
+                                                              { QStringLiteral("label"), QStringLiteral("Reply") },
+                                                              { QStringLiteral("input"), QStringLiteral("text") } } };
+    o[QStringLiteral("progress")] = 40;
+    o[QStringLiteral("expires")] = m_now + 100000;
+    QVERIFY(store->publish(kWallet, batch({ o })).isEmpty());
+    const QVariantList all = store->list();
+    QCOMPARE(all.size(), 1);
+    QVERIFY(logos::intent::isCanonicalValue(QVariant(all)));
 }
 
 QTEST_GUILESS_MAIN(TestObjectStore)

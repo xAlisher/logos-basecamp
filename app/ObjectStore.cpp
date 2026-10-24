@@ -253,6 +253,9 @@ QVariantMap ObjectStore::validate(const QString& app, int index, const QVariantM
         qWarning().noquote() << "ObjectStore:" << app << "object" << index << what;
     };
 
+    // Everything kept is a canonical intent payload type (LogosIntent.h): no
+    // QStringList, no uint. An envelope may yet cross an engine boundary (the
+    // search role, a view's results), and the broker refuses anything else.
     QVariantMap out;
     for (auto it = in.cbegin(); it != in.cend(); ++it) {
         if (kHostFields.contains(it.key()))
@@ -327,12 +330,12 @@ QVariantMap ObjectStore::validate(const QString& app, int index, const QVariantM
     if (in.contains(QStringLiteral("keywords"))) {
         if (!stringList(in.value(QStringLiteral("keywords")), kMaxKeywords, kMaxKeyword))
             return bad(QStringLiteral("`keywords`: at most %1 strings of %2").arg(kMaxKeywords).arg(kMaxKeyword));
-        out[QStringLiteral("keywords")] = in.value(QStringLiteral("keywords")).toStringList();
+        out[QStringLiteral("keywords")] = in.value(QStringLiteral("keywords")).toList();
     }
     if (in.contains(QStringLiteral("subjects"))) {
         if (!stringList(in.value(QStringLiteral("subjects")), kMaxSubjects, kMaxSubject))
             return bad(QStringLiteral("`subjects`: at most %1 strings").arg(kMaxSubjects));
-        out[QStringLiteral("subjects")] = in.value(QStringLiteral("subjects")).toStringList();
+        out[QStringLiteral("subjects")] = in.value(QStringLiteral("subjects")).toList();
     }
 
     if (in.contains(QStringLiteral("refs"))) {

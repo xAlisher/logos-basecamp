@@ -551,9 +551,13 @@ void MainUIBackend::wireIntents()
                 const QString error = intent == kObjectsPublishIntent
                     ? m_objects->publish(requesterName, params, nullptr, &ids)
                     : m_objects->retract(requesterName, params);
-                QTimer::singleShot(0, this, [this, dispatchId, ids, error]() {
+                // A QVariantList, not the QStringList: the broker refuses any
+                // answer outside the canonical payload types, and QStringList
+                // is outside them (the app would hear `failed`).
+                const QVariantList idList(ids.cbegin(), ids.cend());
+                QTimer::singleShot(0, this, [this, dispatchId, idList, error]() {
                     respondToShellIntent(dispatchId, error.isEmpty(),
-                                         QVariantMap{ { QStringLiteral("ids"), ids } }, error);
+                                         QVariantMap{ { QStringLiteral("ids"), idList } }, error);
                 });
                 return 1;
             }

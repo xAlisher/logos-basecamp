@@ -9,6 +9,9 @@
 #include <QSet>
 #include <QTimer>
 
+#include <algorithm>
+#include <utility>
+
 const QString& ObjectSearch::searchRole()
 {
     static const QString s = QStringLiteral("search");
@@ -35,10 +38,13 @@ ObjectSearch::ObjectSearch(ObjectStore* store, HolderFn holderOf, QObject* paren
     m_debounce = new QTimer(this);
     m_debounce->setSingleShot(true);
     m_debounce->setInterval(kRefreshDebounceMs);
-    connect(m_debounce, &QTimer::timeout, this, &ObjectSearch::refreshAll);
+    connect(m_debounce, &QTimer::timeout, this, [this]() {
+        refreshFor(std::exchange(m_changedApps, {}));
+    });
     if (m_store) {
         connect(m_store, &ObjectStore::objectsChanged, this, [this](const QString& app) {
             emit objectsChanged(app);
+            m_changedApps.insert(app);
             if (!m_debounce->isActive())
                 m_debounce->start();
         });
@@ -135,6 +141,38 @@ QStringList ObjectSearch::markSeen(const QString& viewApp, const QStringList& id
     return allowed;
 }
 
+QVariantMap ObjectSearch::counts(const QString& viewApp, const QString& query) const
+{
+    if (!m_store || !isView(viewApp))
+        return {};
+    const QStringList tokens = ObjectRanker::tokens(query);
+    QHash<QString, int> byType, byApp;
+    int total = 0;
+    for (const QVariant& v : m_store->list({})) {
+        const QVariantMap o = v.toMap();
+        if (!tokens.isEmpty() && ObjectRanker::score(o, tokens, 0) < 0)
+            continue;
+        ++total;
+        ++byType[o.value(QStringLiteral("type")).toString()];
+        ++byApp[o.value(QStringLiteral("app")).toString()];
+    }
+    auto sorted = [](const QHash<QString, int>& counts, const QString& key) {
+        QList<QPair<QString, int>> list;
+        for (auto it = counts.cbegin(); it != counts.cend(); ++it)
+            if (!it.key().isEmpty()) list.append({ it.key(), it.value() });
+        std::sort(list.begin(), list.end(), [](const auto& a, const auto& b) {
+            return a.second != b.second ? a.second > b.second : a.first < b.first;
+        });
+        QVariantList out;
+        for (const auto& p : std::as_const(list))
+            out << QVariantMap{ { key, p.first }, { QStringLiteral("count"), p.second } };
+        return out;
+    };
+    return { { QStringLiteral("total"), total },
+             { QStringLiteral("types"), sorted(byType, QStringLiteral("type")) },
+             { QStringLiteral("apps"), sorted(byApp, QStringLiteral("app")) } };
+}
+
 QVariantList ObjectSearch::objects(const QString& app, const QVariantMap& filter) const
 {
     if (!m_store || app.isEmpty() || app != holder())
@@ -190,12 +228,16 @@ QStringList ObjectSearch::rankWithFallback(const QString& query, const QVariantM
     return ObjectRanker::rank(m_store->list(sanitizeFilter(filter)), query, now());
 }
 
-void ObjectSearch::request(ObjectResults* results)
+void ObjectSearch::request(ObjectResults* results, bool byView)
 {
     if (!results || !results->attached()) return;
     if (!results->requestId.isEmpty())
         m_open.remove(std::exchange(results->requestId, QString()));   // superseded: stale
 
+    // Only what the view asked for is pending: a host refresh keeps the rows
+    // (and, when they come back the same, says nothing).
+    if (byView)
+        results->setPending(true);
     const QString who = holder();
     if (who.isEmpty()) {
         fallback(results);
@@ -204,7 +246,6 @@ void ObjectSearch::request(ObjectResults* results)
     const QString id = QStringLiteral("search-%1").arg(++m_nextRequest);
     results->requestId = id;
     m_open.insert(id, Open{ results, who });
-    results->setPending(true);
     emit searchRequested(who, id, results->query(), results->filter());
 
     if (!m_open.contains(id))
@@ -253,7 +294,23 @@ void ObjectSearch::refreshAll()
 {
     const QList<QPointer<ObjectResults>> live = m_live;
     for (const QPointer<ObjectResults>& r : live)
-        if (r) request(r);
+        if (r) request(r, false);
+}
+
+void ObjectSearch::refreshFor(const QSet<QString>& apps)
+{
+    if (apps.isEmpty()) return;
+    const QList<QPointer<ObjectResults>> live = m_live;
+    for (const QPointer<ObjectResults>& r : live) {
+        if (!r) continue;
+        const QStringList only = r->filter().value(QStringLiteral("apps")).toStringList();
+        // A filter naming its apps cannot change with another app's objects.
+        if (!only.isEmpty()
+            && std::none_of(only.cbegin(), only.cend(),
+                            [&apps](const QString& a) { return apps.contains(a); }))
+            continue;
+        request(r, false);
+    }
 }
 
 void ObjectSearch::rolesChanged()

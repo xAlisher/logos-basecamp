@@ -449,3 +449,9 @@ QStringList ShellApi::markSeen(const QVariantList& ids)
         if (v.typeId() == QMetaType::QString) list << v.toString();
     return search->markSeen(m_app, list);
 }
+
+QVariantMap ShellApi::counts(const QString& query) const
+{
+    ObjectSearch* search = m_backend ? m_backend->objectSearch() : nullptr;
+    return search && isView() ? search->counts(m_app, query) : QVariantMap();
+}

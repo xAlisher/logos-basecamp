@@ -4,6 +4,7 @@
 #include <QList>
 #include <QObject>
 #include <QPointer>
+#include <QSet>
 #include <QStringList>
 #include <QVariantList>
 #include <QVariantMap>
@@ -30,7 +31,10 @@ class QTimer;
 //   and ignored.
 // * With no holder the host ranks at once (ObjectRanker); a holder that does not
 //   answer within kAnswerTimeoutMs is ranked for, too, and that is logged.
-// * A store change asks every live results model again, debounced.
+// * A store change asks again, debounced, for the live results models whose
+//   filter could include the app that changed. That refresh is the host's,
+//   not the view's: it does not flip `pending`, and rows that come back the
+//   same signal nothing, so a view cannot time other apps' publishing.
 //
 // Who may do what is decided here (each call names its app), so the rules are
 // unit-tested without the rest of the host; ShellApi re-checks the role on every
@@ -45,9 +49,12 @@ public:
     static constexpr int kMaxAnswer = 200;
     static constexpr int kAnswerTimeoutMs = 500;
     static constexpr int kRefreshDebounceMs = 200;
-    // Live results models per view app. A view should keep one and call
-    // update(); past this the oldest stops following the store.
-    static constexpr int kMaxLivePerView = 8;
+    // Live results models per view app. A view should keep one per list and
+    // call update(), and destroy() the ones it drops; past this the oldest
+    // stops following the store. Twice what home uses (7 modules, the pills
+    // and the feed), so models a view dropped but the GC has not collected yet
+    // do not push out ones it still shows.
+    static constexpr int kMaxLivePerView = 16;
 
     static const QString& searchRole();      // "search"
     static const QString& fallbackRanker();  // "fallback"
@@ -76,6 +83,12 @@ public:
     bool inResultsOf(const QString& viewApp, const QString& id) const;
     // Marks the ids in `viewApp`'s results seen; returns those it marked.
     QStringList markSeen(const QString& viewApp, const QStringList& ids);
+    // How many objects match `query` (the host's matching: every token a
+    // prefix of a word, as ObjectRanker), uncapped, by type and by app:
+    // { total, types: [{ type, count }], apps: [{ app, count }] }, most first,
+    // ties by name. A results model holds at most kMaxAnswer; these are what
+    // pills count. {} when `viewApp` is not a view.
+    QVariantMap counts(const QString& viewApp, const QString& query) const;
 
     // ── The search role ─────────────────────────────────────────────────
     // The envelopes `filter` allows, newest first; empty unless `app` holds `search`.
@@ -94,6 +107,9 @@ public:
     void rolesChanged();
     // Ask again for every live results model (the holder just started).
     void refreshAll();
+    // Ask again for the live results models whose filter could include one of
+    // `apps` (a store change).
+    void refreshFor(const QSet<QString>& apps);
     // Only the spec's keys, as string lists, plus unseenOnly.
     static QVariantMap sanitizeFilter(const QVariantMap& filter);
 
@@ -112,8 +128,9 @@ private:
         QString holder;
     };
 
-    // Ask (again) for `results`' current query and filter.
-    void request(ObjectResults* results);
+    // Ask (again) for `results`' current query and filter. `byView`: the view
+    // asked (update()), so it may see `pending`; otherwise the host refreshes.
+    void request(ObjectResults* results, bool byView);
     void forget(ObjectResults* results);
     void fillWith(ObjectResults* results, const QStringList& ids, const QString& ranker);
     void fallback(ObjectResults* results);
@@ -128,5 +145,6 @@ private:
     quint64 m_nextRequest = 0;
     int m_answerTimeoutMs = kAnswerTimeoutMs;
     QTimer* m_debounce = nullptr;
+    QSet<QString> m_changedApps;   // since the debounce started
     QString m_lastRanker;
 };

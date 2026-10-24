@@ -65,7 +65,7 @@ void ObjectResults::update(const QString& query, const QVariantMap& filter)
 {
     setRequest(query, filter);
     if (m_search)
-        m_search->request(this);
+        m_search->request(this, true);
 }
 
 QVariantMap ObjectResults::get(int row) const
@@ -111,22 +111,30 @@ void ObjectResults::fill(const QStringList& ids, const QList<QVariantMap>& envel
     for (const QVariantMap& o : envelopes)
         rows << served(o);
 
+    // What the view asked for is answered even when it comes back the same;
+    // a host refresh that changes nothing says nothing (the view would learn
+    // when other apps publish, ObjectSearch.h).
+    const bool answersView = m_pending;
     const bool sameOrder = ids == m_ids;
     const int before = int(m_rows.size());
+    bool changed = ranker != m_ranker;
     if (sameOrder) {
         if (rows != m_rows) {
             m_rows = rows;
             emit dataChanged(index(0), index(int(m_rows.size()) - 1));
+            changed = true;
         }
     } else {
         beginResetModel();
         m_ids = ids;
         m_rows = rows;
         endResetModel();
+        changed = true;
     }
     m_ranker = ranker;
     setPending(false);
     if (before != m_rows.size())
         emit countChanged();
-    emit resultsChanged();
+    if (changed || answersView)
+        emit resultsChanged();
 }

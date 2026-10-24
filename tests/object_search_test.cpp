@@ -7,7 +7,8 @@
 // timeout fallback, store changes asking again, and that apps without the
 // right role get nothing. Roles are a plain map here; ShellRoles is tested in
 // shell_roles_test.cpp. basecamp_search's BasecampSearchRanker.js follows the
-// same rules and is checked against this ranker headlessly.
+// same rules: it runs here in a QJSEngine and must give the same order
+// (testJsRankerMatches).
 
 #include "ObjectRanker.h"
 #include "ObjectResults.h"
@@ -15,6 +16,9 @@
 #include "ObjectStore.h"
 
 #include <QCoreApplication>
+#include <QFile>
+#include <QJSEngine>
+#include <QJSValue>
 #include <QSettings>
 #include <QSignalSpy>
 #include <QStandardPaths>
@@ -22,6 +26,7 @@
 #include <QTest>
 
 #include <memory>
+#include <vector>
 
 namespace {
 
@@ -104,6 +109,7 @@ private slots:
     void testTiesById();
     void testNestedFieldStrings();
     void testCap();
+    void testJsRankerMatches();
 
     // The protocol
     void testNoHolderAnswersAtOnce();
@@ -118,6 +124,9 @@ private slots:
     void testViewsActOnlyOnTheirResults();
     void testLosingTheViewRoleEmptiesResults();
     void testHolderChangeMovesRequests();
+    void testDroppedResultsFreeTheirPlace();
+    void testHostRefreshSaysNothingWhenUnchanged();
+    void testCountsAreUncapped();
 
 private:
     std::unique_ptr<ObjectStore> makeStore()
@@ -275,6 +284,60 @@ void TestObjectSearch::testCap()
     for (int i = 0; i < 250; ++i)
         objects << env(QStringLiteral("id%1").arg(i, 3, 10, QLatin1Char('0')), "Ada", kNow, true);
     QCOMPARE(ObjectRanker::rank(objects, QStringLiteral("ada"), kNow).size(), ObjectRanker::kMaxResults);
+}
+
+// The same envelopes and clock through both rankers: the same ids, in the same
+// order, for every query (a change to one and not the other fails here).
+void TestObjectSearch::testJsRankerMatches()
+{
+    QFile f(QFINDTESTDATA("../apps/basecamp_search/qml/BasecampSearchRanker.js"));
+    QVERIFY(f.open(QIODevice::ReadOnly));
+    QString code = QString::fromUtf8(f.readAll());
+    code.replace(QStringLiteral(".pragma library"), QString());
+    QJSEngine js;
+    const QJSValue loaded = js.evaluate(code, f.fileName());
+    QVERIFY2(!loaded.isError(), qPrintable(loaded.toString()));
+
+    QVariantList objects{
+        env("t1", "Ada Lovelace", kNow - 3 * kHour, false),
+        env("t2", "Ada", kNow - 3 * kHour, false),            // ties t1 on "ada": by id
+        env("t3", "Payment to Ada", kNow - 30 * kHour, true,
+            { { "subtitle", "Weekly rent" }, { "keywords", QStringList{ "rent", "bills" } } }),
+        env("t4", "Lunch", kNow - kHour, false,
+            { { "fields", QVariantMap{ { "text", "with ada tomorrow?" }, { "count", 3 } } } }),
+        env("t5", "Main account", kNow - 100 * kHour, true,
+            { { "fields", QVariantMap{ { "balance", QVariantMap{ { "amount", "1.2" }, { "unit", "ETH" } } },
+                                       { "tags", QVariantList{ "savings", "cold" } } } } }),
+        env("t6", "Canada trip", kNow - 2 * kHour, false, { { "subtitle", "ada's idea" } }),
+        env("t7", "Logos testnet relaunch", kNow - 5 * kHour, true,
+            { { "keywords", QStringList{ "network" } } }),
+        env("t8", "tx:0x91 sent", kNow - 7 * kHour, false),
+    };
+    // One with `updated` and no `time`, and one with the same time as t7.
+    QVariantMap updatedOnly{ { "id", "t9" }, { "title", "Ada updated" },
+                             { "updated", kNow - 4 * kHour }, { "seen", true } };
+    objects << updatedOnly << env("t0", "Relaunch notes", kNow - 5 * kHour, true);
+
+    const QStringList queries{ QString(), QStringLiteral("  "), QStringLiteral("ada"),
+                               QStringLiteral("ADA love"), QStringLiteral("re"),
+                               QStringLiteral("eth"), QStringLiteral("cold savings"),
+                               QStringLiteral("tx:0x91"), QStringLiteral("ada's"),
+                               QStringLiteral("nothing-matches"), QStringLiteral("l") };
+    const QJSValue rank = js.globalObject().property(QStringLiteral("rank"));
+    QVERIFY(rank.isCallable());
+    for (const QString& q : queries) {
+        const QJSValue r = rank.call({ js.toScriptValue(objects), QJSValue(q), QJSValue(double(kNow)) });
+        QVERIFY2(!r.isError(), qPrintable(r.toString()));
+        QCOMPARE(r.toVariant().toStringList(), ObjectRanker::rank(objects, q, kNow));
+    }
+    // And the cap.
+    QVariantList many;
+    for (int i = 0; i < 250; ++i)
+        many << env(QStringLiteral("id%1").arg(i, 3, 10, QLatin1Char('0')), "Ada", kNow - i * kHour, i % 3 == 0);
+    const QJSValue r = rank.call({ js.toScriptValue(many), QJSValue(QStringLiteral("ada")), QJSValue(double(kNow)) });
+    QCOMPARE(r.toVariant().toStringList(), ObjectRanker::rank(many, QStringLiteral("ada"), kNow));
+    QCOMPARE(js.globalObject().property(QStringLiteral("kMatchContentFields")).toBool(),
+             ObjectRanker::kMatchContentFields);
 }
 
 // ── The protocol ─────────────────────────────────────────────────────────────
@@ -588,6 +651,123 @@ void TestObjectSearch::testHolderChangeMovesRequests()
     search->rolesChanged();
     QCOMPARE(asked.count(), 2);
     QCOMPARE(results->ranker(), ObjectSearch::fallbackRanker());
+}
+
+// Home rebuilds its module delegates on every module edit and frees their
+// results; one it still shows (the feed's) must stay live. Results not freed
+// yet (waiting for the GC) still fit under the cap with home's own.
+void TestObjectSearch::testDroppedResultsFreeTheirPlace()
+{
+    m_roles.remove(QStringLiteral("search"));
+    auto store = makeStore();
+    seed(store.get());
+    auto search = makeSearch(store.get());
+    std::unique_ptr<ObjectResults> feed(search->search(kHome, QString()));
+    for (int round = 0; round < 5; ++round) {
+        std::vector<std::unique_ptr<ObjectResults>> modules;
+        for (int i = 0; i < 7; ++i)
+            modules.emplace_back(search->search(kHome, QString(), { { "types", QStringList{ "message" } } }));
+    }   // freed, as the delegates' onDestruction does
+    QVERIFY(feed->attached());
+
+    // Seven dropped but not yet collected, seven new ones: still under the cap.
+    std::vector<std::unique_ptr<ObjectResults>> lingering, current;
+    for (int i = 0; i < 7; ++i) lingering.emplace_back(search->search(kHome, QString()));
+    for (int i = 0; i < 7; ++i) current.emplace_back(search->search(kHome, QString()));
+    QVERIFY(feed->attached());
+    QVERIFY(search->inResultsOf(kHome, ObjectStore::idFor(kChat, "m:1")));
+
+    // Past the cap the oldest stops following the store.
+    std::vector<std::unique_ptr<ObjectResults>> more;
+    for (int i = 0; i < ObjectSearch::kMaxLivePerView; ++i)
+        more.emplace_back(search->search(kHome, QString()));
+    QVERIFY(!feed->attached());
+}
+
+// A store change re-asks only the results that could include the app that
+// changed, and a refresh that comes back the same tells the view nothing: a
+// view must not learn when apps outside its filter publish.
+void TestObjectSearch::testHostRefreshSaysNothingWhenUnchanged()
+{
+    auto store = makeStore();
+    seed(store.get());
+    auto search = makeSearch(store.get());
+    QSignalSpy asked(search.get(), &ObjectSearch::searchRequested);
+    std::unique_ptr<ObjectResults> wallet(
+        search->search(kLauncher, QString(), { { "apps", QStringList{ kWallet } } }));
+    std::unique_ptr<ObjectResults> txs(
+        search->search(kLauncher, QString(), { { "types", QStringList{ "transaction" } } }));
+    QCOMPARE(asked.count(), 2);
+    const QStringList walletIds = search->rankWithFallback(QString(), wallet->filter());
+    QVERIFY(search->answer(kRanker, asked.at(0).at(1).toString(), idList(walletIds)));
+    QVERIFY(search->answer(kRanker, asked.at(1).at(1).toString(), idList(walletIds)));
+    QVERIFY(!wallet->pending());
+
+    QSignalSpy walletPending(wallet.get(), &ObjectResults::pendingChanged);
+    QSignalSpy walletResults(wallet.get(), &ObjectResults::resultsChanged);
+    QSignalSpy txsPending(txs.get(), &ObjectResults::pendingChanged);
+    QSignalSpy txsResults(txs.get(), &ObjectResults::resultsChanged);
+
+    // The chat app publishes: only `txs` (no app filter) is asked again.
+    QCOMPARE(store->publish(kChat, batch({ obj("m:2", "message", "Ada again", kNow) })), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(asked.count(), 3, 1000);
+    QCOMPARE(asked.at(2).at(3).toMap().value("types").toStringList(), QStringList{ "transaction" });
+    QVERIFY(!txs->pending());   // the host's refresh, not the view's
+    QVERIFY(search->answer(kRanker, asked.at(2).at(1).toString(), idList(walletIds)));
+    QTest::qWait(30);
+    QCOMPARE(asked.count(), 3);
+    QCOMPARE(txsPending.count(), 0);
+    QCOMPARE(txsResults.count(), 0);   // same rows: nothing to say
+    // Again: still silent.
+    QCOMPARE(store->publish(kChat, batch({ obj("m:3", "message", "Ada thrice", kNow) })), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(asked.count(), 4, 1000);
+    QVERIFY(search->answer(kRanker, asked.at(3).at(1).toString(), idList(walletIds)));
+    QCOMPARE(txsResults.count(), 0);
+    QCOMPARE(walletPending.count(), 0);
+    QCOMPARE(walletResults.count(), 0);
+
+    // A change the view can see is told; so is an answer to the view's own ask.
+    QCOMPARE(store->publish(kWallet, batch({ obj("tx:4", "transaction", "Sent to Bob", kNow) })), QString());
+    QTRY_COMPARE_WITH_TIMEOUT(walletResults.count(), 1, 2000);
+    QVERIFY(wallet->ids().contains(ObjectStore::idFor(kWallet, "tx:4")));
+    QCOMPARE(walletPending.count(), 0);
+    m_roles.remove(QStringLiteral("search"));
+    const int before = int(txsResults.count());
+    txs->update(QString(), txs->filter());
+    QCOMPARE(txsResults.count(), before + 1);
+}
+
+void TestObjectSearch::testCountsAreUncapped()
+{
+    m_roles.remove(QStringLiteral("search"));
+    auto store = makeStore();
+    QVariantList txs, msgs;
+    for (int i = 0; i < 300; ++i)
+        txs << obj(QStringLiteral("tx%1").arg(i), "transaction", QStringLiteral("Payment %1").arg(i), kNow - i);
+    for (int i = 0; i < 5; ++i)
+        msgs << obj(QStringLiteral("m%1").arg(i), "message", QStringLiteral("Ada %1").arg(i), kNow - 1000 - i);
+    QCOMPARE(store->publish(kWallet, batch(txs)), QString());
+    QCOMPARE(store->publish(kChat, batch(msgs)), QString());
+    auto search = makeSearch(store.get());
+
+    std::unique_ptr<ObjectResults> all(search->search(kHome, QString()));
+    QCOMPARE(all->count(), ObjectSearch::kMaxAnswer);   // the model stops at 200…
+    const QVariantMap counts = search->counts(kHome, QString());
+    QCOMPARE(counts.value("total").toInt(), 305);       // …the counts do not
+    const QVariantList types = counts.value("types").toList();
+    QCOMPARE(types.size(), 2);
+    QCOMPARE(types.at(0).toMap().value("type").toString(), QStringLiteral("transaction"));
+    QCOMPARE(types.at(0).toMap().value("count").toInt(), 300);
+    QCOMPARE(types.at(1).toMap().value("count").toInt(), 5);
+    QCOMPARE(counts.value("apps").toList().at(1).toMap().value("app").toString(), kChat);
+
+    // With a query, only what matches (the ranker's matching).
+    const QVariantMap ada = search->counts(kHome, QStringLiteral("ada"));
+    QCOMPARE(ada.value("total").toInt(), 5);
+    QCOMPARE(ada.value("types").toList().size(), 1);
+    // Views only.
+    QVERIFY(search->counts(kOther, QString()).isEmpty());
+    QVERIFY(search->counts(kRanker, QString()).isEmpty());
 }
 
 QTEST_GUILESS_MAIN(TestObjectSearch)

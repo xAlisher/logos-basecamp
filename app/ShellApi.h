@@ -170,6 +170,10 @@ public:
     Q_INVOKABLE QString raise(const QString& id, const QString& action, const QString& text = QString());
     // Only objects in this app's results; returns the ids marked.
     Q_INVOKABLE QStringList markSeen(const QVariantList& ids);
+    // How many objects match `query`, uncapped (a results model stops at
+    // 200): { total, types: [{ type, count }], apps: [{ app, count }] }, for
+    // pills. Read when asked, never pushed.
+    Q_INVOKABLE QVariantMap counts(const QString& query) const;
 
     // any role app: open whatever fills another role (navigation only).
     Q_INVOKABLE bool openRole(const QString& role);

@@ -102,7 +102,8 @@ Item {
                             Layout.fillWidth: true
                             text: !modelData.enabled ? qsTr("Off: nothing kept")
                                 : modelData.count === 0 ? qsTr("Nothing shared right now")
-                                : qsTr("%n item(s) shared", "", modelData.count)
+                                : modelData.count === 1 ? qsTr("1 item shared")
+                                : qsTr("%1 items shared").arg(modelData.count)
                             color: Theme.palette.textSecondary
                             font.pixelSize: Theme.typography.secondaryText
                             elide: Text.ElideRight

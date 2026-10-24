@@ -345,6 +345,11 @@ private:
     // PackageCoordinator::uninstallApp's deferral — last click wins.
     QString                 m_pendingGatedLoadName;
     QMetaObject::Connection m_pendingGatedLoadConn;
+    // Background loads parked the same way, all of them kept: they are not
+    // clicks, so they neither supersede the parked click nor each other (the
+    // search holder's load used to push the New tab's home out of the slot).
+    QSet<QString>           m_pendingBackgroundLoads;
+    QMetaObject::Connection m_pendingBackgroundConn;
     bool                    m_startupAppsOpened = false;
     QMetaObject::Connection m_startupOpenConn;
     PluginLoader*      m_pluginLoader;      // owned (parent=this)

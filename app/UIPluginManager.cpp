@@ -31,6 +31,8 @@ constexpr const char* kStoppingProp = "basecampStopping";
 #include <QTimer>
 #include <QUrl>
 
+#include <utility>
+
 #include "LogosQmlBridge.h"
 
 #include <ViewModuleHost.h>
@@ -488,6 +490,7 @@ QStringList UIPluginManager::loadingModules() const
 
 void UIPluginManager::unloadUiModule(const QString& moduleName)
 {
+    m_pendingBackgroundLoads.remove(moduleName);   // parked, never started
     if (m_shuttingDown) {
         // Shutdown path: run synchronously — no QML signal handler is on
         // the stack and we need the teardown to complete before Qt child
@@ -606,6 +609,21 @@ void UIPluginManager::loadInBackground(const QString& moduleName)
     if (moduleName.isEmpty() || m_shuttingDown
         || m_loadedUiModules.contains(moduleName) || m_qmlPluginWidgets.contains(moduleName))
         return;   // already running, shown or not
+    if (m_packageCoordinator && !m_packageCoordinator->dependencyDataReady()) {
+        m_pendingBackgroundLoads.insert(moduleName);
+        if (!m_pendingBackgroundConn) {
+            m_pendingBackgroundConn = connect(
+                m_packageCoordinator, &PackageCoordinator::dependencyDataReadyChanged, this, [this]() {
+                    if (!m_packageCoordinator || !m_packageCoordinator->dependencyDataReady()) return;
+                    QObject::disconnect(m_pendingBackgroundConn);
+                    m_pendingBackgroundConn = {};
+                    const QSet<QString> names = std::exchange(m_pendingBackgroundLoads, {});
+                    for (const QString& name : names)
+                        loadInBackground(name);
+                });
+        }
+        return;
+    }
     m_backgroundApps.insert(moduleName);
     loadUiModule(moduleName);
 }

@@ -20,6 +20,9 @@ Column {
     property real since: 0
     // Cards drawn at once; "Show more" adds a page.
     property int shown: 30
+    // How many objects the bar and the pill match in all: a results model
+    // stops at 200, so past that the feed says it shows only part.
+    property int total: 0
 
     signal raiseRequested(string id, string action, string text)
 
@@ -60,5 +63,17 @@ Column {
         anchors.horizontalCenter: parent.horizontalCenter
         text: qsTr("Show more (%1)").arg(feed.rows.length - feed.shown)
         onClicked: feed.shown += 30
+    }
+
+    LogosText {
+        objectName: "home.feed.capped"
+        visible: feed.rows.length <= feed.shown && feed.total > feed.rows.length
+        width: parent.width
+        wrapMode: Text.Wrap
+        horizontalAlignment: Text.AlignHCenter
+        text: qsTr("Showing %1 of %2. Search or pick a pill to find the rest.")
+              .arg(feed.rows.length).arg(feed.total)
+        color: Theme.palette.textTertiary
+        font.pixelSize: Theme.typography.secondaryText
     }
 }

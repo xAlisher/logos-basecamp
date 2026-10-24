@@ -99,6 +99,7 @@ Rectangle {
 
         ObjectCardIcon { object: card.object; size: 28 }
         LogosText {
+            textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
             Layout.fillWidth: true
             text: F.str(card.object.title)
             elide: Text.ElideRight
@@ -106,6 +107,7 @@ Rectangle {
             font.pixelSize: Theme.typography.primaryText
         }
         LogosText {
+            textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
             visible: text.length > 0
             Layout.maximumWidth: card.width * 0.35
             text: body.item ? body.item.trailing : ""
@@ -114,6 +116,7 @@ Rectangle {
             font.pixelSize: Theme.typography.secondaryText
         }
         LogosText {
+            textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
             text: card.timeText
             color: Theme.palette.textTertiary
             font.pixelSize: Theme.typography.secondaryText
@@ -140,6 +143,7 @@ Rectangle {
                 Layout.fillWidth: true
                 spacing: 2
                 LogosText {
+                    textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
                     objectName: card.namePrefix + ".heading"
                     Layout.fillWidth: true
                     text: body.item && body.item.heading.length > 0 ? body.item.heading
@@ -150,6 +154,7 @@ Rectangle {
                     font.weight: Theme.typography.weightMedium
                 }
                 LogosText {
+                    textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
                     Layout.fillWidth: true
                     text: [F.typeLabel(card.type, false), card.timeText].filter(s => s.length > 0).join(" · ")
                     elide: Text.ElideRight
@@ -193,6 +198,7 @@ Rectangle {
                 value: card.progress
             }
             LogosText {
+                textFormat: Text.PlainText   // publisher text, never markup (ADR-071)
                 text: Math.round(card.progress) + "%"
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
@@ -212,6 +218,7 @@ Rectangle {
                     required property int index
                     objectName: card.namePrefix + ".action." + modelData.id
                     text: modelData.label
+                    Component.onCompleted: labelItem.textFormat = Text.PlainText
                     variant: index === 0 ? LogosButton.Variant.Primary : LogosButton.Variant.Secondary
                     onClicked: {
                         if (modelData.input === "text") {

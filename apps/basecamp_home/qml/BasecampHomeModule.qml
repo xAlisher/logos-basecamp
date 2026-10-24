@@ -84,6 +84,10 @@ Rectangle {
     onSizeChanged: rebuild()
     onVisitChanged: { mod.order = null; rebuild() }
     Component.onCompleted: refresh()
+    // A module edit rebuilds every delegate: free this one's results now
+    // (JS-owned, and the GC is lazy), or they keep following the store and
+    // count against home's live results (ObjectSearch::kMaxLivePerView).
+    Component.onDestruction: if (mod.results) mod.results.destroy()
 
     Connections {
         target: mod.results
@@ -104,6 +108,7 @@ Rectangle {
 
             LogosText {
                 id: title
+                textFormat: Text.PlainText
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
                 width: Math.min(implicitWidth, parent.width - menuButton.width - newBadge.width

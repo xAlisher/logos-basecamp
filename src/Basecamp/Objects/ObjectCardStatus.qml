@@ -9,6 +9,8 @@ LogosBadge {
     property string tone: ""
 
     visible: text.length > 0
+    // The publisher's words, never markup (ADR-071).
+    Component.onCompleted: labelItem.textFormat = Text.PlainText
     color: tone === "success" ? Theme.palette.success
          : tone === "error" ? Theme.palette.error
          : tone === "warning" ? Theme.palette.warning

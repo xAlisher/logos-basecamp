@@ -90,11 +90,26 @@ Rectangle {
     property var modules: M.defaultModules().map(M.sanitizeModule)
     readonly property var shownModules: M.ordered(root.modules)
 
-    // One live result for the pills and the feed: the bar's text, no filter.
+    // One live result for whether anything matches: the bar's text, no filter.
     property var allResults: null
     property var allRows: []
-    readonly property var pillSet: M.pills(root.allRows)
-    readonly property var feedRows: M.feedRows(root.allRows, root.pill)
+    // The feed's own, narrowed by the pill: a results model holds at most 200
+    // objects, so the feed under a pill must not be a slice of everything's.
+    // Made when a pill is first picked; with none, the feed is allResults.
+    property var pillResults: null
+    property var pillRows: []
+    // What the pills count: every object the bar's text matches, uncapped
+    // (shell.counts), read again whenever the results change.
+    property var counts: ({})
+    readonly property var pillSet: ({ types: root.counts.types || [], apps: root.counts.apps || [] })
+    readonly property var feedRows: M.feedRows(root.pill ? root.pillRows : root.allRows, root.pill)
+    // How many the feed would show uncapped (the pill's count, or all).
+    readonly property int feedTotal: {
+        if (!root.pill) return root.counts.total || 0
+        const list = root.pill.type ? root.pillSet.types : root.pillSet.apps
+        const hit = list.find(p => (root.pill.type ? p.type === root.pill.type : p.app === root.pill.app))
+        return hit ? hit.count : 0
+    }
 
     // What this visit shows as new (id -> true), and the ids noted since the
     // last markSeen. A visit starts when the shell shows a New tab.
@@ -160,20 +175,47 @@ Rectangle {
         if (root.allResults) root.allResults.update(root.rawQuery, {})
         else root.allResults = shell.search(root.rawQuery, {})
         rebuildAll()
+        refreshPill()
     }
     function rebuildAll() {
-        const rows = []
-        if (root.allResults)
-            for (let i = 0; i < root.allResults.count; ++i) rows.push(root.allResults.get(i))
-        root.allRows = rows
+        root.allRows = root.rowsOf(root.allResults)
+        root.counts = shell.counts(root.rawQuery) || ({})
+        if (root.view === "feed" && !root.pill) root.noteShown(root.feedRows.slice(0, feed.shown))
+    }
+    function refreshPill() {
+        if (!root.pill) { root.pillRows = []; return }
+        if (root.pillResults) root.pillResults.update(root.rawQuery, M.pillFilter(root.pill))
+        else root.pillResults = shell.search(root.rawQuery, M.pillFilter(root.pill))
+        rebuildPill()
+    }
+    function rebuildPill() {
+        if (!root.pill) return
+        root.pillRows = root.rowsOf(root.pillResults)
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
+    }
+    function rowsOf(results) {
+        const rows = []
+        if (results)
+            for (let i = 0; i < results.count; ++i) rows.push(results.get(i))
+        return rows
     }
 
     onRawQueryChanged: refreshAll()
+    onPillChanged: refreshPill()
     onViewChanged: if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     Connections {
         target: root.allResults
         function onResultsChanged() { root.rebuildAll() }
+    }
+    Connections {
+        target: root.pillResults
+        function onResultsChanged() { root.rebuildPill() }
+    }
+    // Results are JS-owned and the GC is lazy: free them now, so they stop
+    // following the store and do not count against this view's live ones.
+    Component.onDestruction: {
+        if (root.allResults) root.allResults.destroy()
+        if (root.pillResults) root.pillResults.destroy()
     }
 
     Timer {
@@ -470,6 +512,7 @@ Rectangle {
             visible: root.view === "feed" && root.allRows.length > 0
             width: parent.width
             rows: visible ? root.feedRows : []
+            total: root.feedTotal
             now: root.now
             newIds: root.newIds
             since: root.lastVisitAt

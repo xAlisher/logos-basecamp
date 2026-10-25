@@ -456,8 +456,9 @@ signals:
     void lastSearchRankerChanged();
     // The publisher answered an action raised with raiseObjectAction().
     void objectActionAnswered(const QString& requestId, bool ok, const QString& error);
-    // A signing request ended (KeychainBroker::requestFinished): what the
-    // shell's Signed / Not signed sheet over `requester` says.
+    // A signing request ended (KeychainBroker::requestFinished) and
+    // `requester`, still running, was brought forward: what the shell's
+    // Signed / Not signed sheet over it says.
     void keychainRequestFinished(const QString& requester, const QVariantMap& summary);
     void rolesChanged();
     void shellPreferencesChanged();
@@ -703,6 +704,9 @@ private:
     QHash<QString, QString>   m_keychainDispatches;
     // Reported uninstalled; their keys go once the metadata agrees.
     QSet<QString>             m_keychainUninstalled;
+    // The keychain role's app was running at the last look: closing it then
+    // cancels the requests still waiting for a key.
+    bool                      m_keychainAppOpen = false;
     QPointer<ObjectResults> m_shellResults;
     // The `search` holder this backend started unseen (ensureSearchHolderRunning).
     QString                   m_backgroundSearchApp;

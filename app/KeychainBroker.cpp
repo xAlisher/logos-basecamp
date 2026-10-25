@@ -224,6 +224,19 @@ bool KeychainBroker::cancelByUser(const QString& requestId)
     return true;
 }
 
+int KeychainBroker::keychainClosed()
+{
+    int n = 0;
+    const QStringList ids = m_requests.keys();
+    for (const QString& id : ids) {
+        const auto it = m_requests.constFind(id);
+        if (it == m_requests.cend() || it->state != State::Pending) continue;
+        end(id, State::Cancelled, QStringLiteral("keychain_closed"));
+        ++n;
+    }
+    return n;
+}
+
 void KeychainBroker::signerReached(const QString& requestId)
 {
     auto it = m_requests.find(requestId);

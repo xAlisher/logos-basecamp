@@ -1595,15 +1595,34 @@ void MainUIBackend::wireKeychain()
                 if (!dispatchId.isEmpty())
                     respondToShellIntent(dispatchId, true, result, QString());
             });
-    connect(m_keychainBroker, &KeychainBroker::requestFinished,
-            this, &MainUIBackend::keychainRequestFinished);
+    // Back to the requester (basecamp-experiments#58): it comes forward and
+    // the shell's Signed / Not signed sheet goes over it (OverlayDialogs). Not
+    // for an ending the requester caused itself, and not into an app that is
+    // no longer running: presenting it would start it again.
+    connect(m_keychainBroker, &KeychainBroker::requestFinished, this,
+            [this](const QString& requester, const QVariantMap& summary) {
+                const QString err = summary.value(QStringLiteral("error")).toString();
+                if (err == QStringLiteral("requester_closed") || err == QStringLiteral("requester_cancelled"))
+                    return;
+                if (!m_uiPluginManager || !m_uiPluginManager->isUiAppLoaded(requester))
+                    return;
+                if (m_intentPresenter)
+                    m_intentPresenter->presentApp(requester);
+                emit keychainRequestFinished(requester, summary);
+            });
 
     // A requester closed mid-request is cancelled; a signer closed while it
-    // held one fails it.
+    // held one fails it. The Keychain app closed (after it had opened) cancels
+    // whatever still waited for a key; one already with its signer goes on.
     connect(m_uiPluginManager, &UIPluginManager::uiModulesChanged, this, [this]() {
         for (const QString& app : m_keychainBroker->appsInvolved())
             if (!m_uiPluginManager->isUiAppLoaded(app))
                 m_keychainBroker->appClosed(app);
+        const QString holder = roleHolder(kKeychainRole);
+        const bool open = !holder.isEmpty() && m_uiPluginManager->isUiAppLoaded(holder);
+        if (!open && m_keychainAppOpen)
+            m_keychainBroker->keychainClosed();
+        m_keychainAppOpen = open;
     });
 
     // Uninstalled: its keys leave the directory, label and note with them.

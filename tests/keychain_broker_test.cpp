@@ -220,6 +220,28 @@ private slots:
         QVERIFY(!m_broker->cancelByUser(id));   // once
     }
 
+    void keychainClosedCancelsOnlyWhatWaitsForAKey()
+    {
+        // basecamp-experiments#58: closing the Keychain app is "the user closed
+        // Keychain". A request already with its signer is the signer's to end.
+        QSignalSpy results(m_broker, &KeychainBroker::signatureResult);
+        QSignalSpy ended(m_broker, &KeychainBroker::requestEnded);
+        const QString waiting = open();
+        const QString withSigner = open(kStranger);
+        QVERIFY(m_broker->chooseKey(withSigner, kSigner, "daily"));
+        m_broker->signerReached(withSigner);
+
+        QCOMPARE(m_broker->keychainClosed(), 1);
+        QCOMPARE(results.count(), 1);
+        QCOMPARE(results.last().at(0).toString(), kRequester);
+        QCOMPARE(results.last().at(1).toMap().value("status").toString(), QStringLiteral("cancelled"));
+        QCOMPARE(results.last().at(1).toMap().value("error").toString(), QStringLiteral("keychain_closed"));
+        QCOMPARE(ended.count(), 0);
+        QCOMPARE(m_broker->stateFor(kRequester, waiting), QString());
+        QCOMPARE(m_broker->stateFor(kStranger, withSigner), QStringLiteral("signing"));
+        QCOMPARE(m_broker->keychainClosed(), 0);
+    }
+
     void keychainSeesWhoSignsOnceChosen()
     {
         const QString id = open();

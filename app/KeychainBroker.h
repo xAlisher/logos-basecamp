@@ -90,6 +90,9 @@ public:
     bool chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId);
     // The user closed Keychain or pressed Cancel.
     bool cancelByUser(const QString& requestId);
+    // The Keychain app was closed: every request still waiting for a key ends
+    // as cancelled (keychain_closed). One already with its signer goes on.
+    int keychainClosed();
 
     // ── The shell, about the hand-off ───────────────────────────────────
     void signerReached(const QString& requestId);     // keyChosen → signing

@@ -322,9 +322,13 @@ Item {
                     wrapMode: Text.WordWrap
                 }
 
-                RowLayout {
+                // On a phone "Add shell…" goes under the picker, so the
+                // picker has the whole width for the shell's name.
+                GridLayout {
                     Layout.fillWidth: true
-                    spacing: Theme.spacing.medium
+                    columns: root.compact ? 1 : 2
+                    columnSpacing: Theme.spacing.medium
+                    rowSpacing: Theme.spacing.small
 
                     // One list: the two arrangements of Basecamp Legacy, the shell
                     // built into Basecamp (by Logos, no warning), and the shell
@@ -334,12 +338,19 @@ Item {
                         id: shellCombo
                         objectName: "customisation.shellCombo"
                         Layout.fillWidth: true
-                        Layout.maximumWidth: 360
+                        Layout.maximumWidth: root.compact ? Number.POSITIVE_INFINITY : 360
                         Layout.preferredHeight: root.pickerHeight
                         readonly property var packages: root.prefs ? root.prefs.shellPackages : []
                         readonly property var values: ["builtin:sidebar", "builtin:desktop"].concat(packages.map(p => p.id))
-                        model: [qsTr("Basecamp Legacy  by Logos"), qsTr("Basecamp Legacy desktop  by Logos")].concat(
-                                   packages.map(p => p.name + "  " + qsTr("by %1").arg(p.signer || p.author || qsTr("unknown"))))
+                        // Each shell's name; the list adds who made it. Closed,
+                        // the box shows the name alone, so it fits at phone
+                        // width beside "Add shell…" (the line below says who).
+                        readonly property var names: [qsTr("Basecamp Legacy"), qsTr("Basecamp Legacy (desktop)")]
+                            .concat(packages.map(p => p.name))
+                        model: names.map((n, i) => qsTr("%1 by %2").arg(n).arg(
+                                   i < 2 ? qsTr("Logos")
+                                         : (packages[i - 2].signer || packages[i - 2].author || qsTr("unknown"))))
+                        displayText: names[currentIndex] || ""
                         readonly property string active: root.prefs
                             ? (root.prefs.activeShell !== "" ? root.prefs.activeShell : "builtin:" + root.prefs.activeLayout) : ""
                         readonly property string chosen: root.prefs
@@ -412,7 +423,7 @@ Item {
                                 .arg(active.signer || active.author || qsTr("unknown builder"))
                                 .arg(active.signed ? qsTr(" (signed, not verified by Logos)") : qsTr(" (unsigned)"))
                           : root.prefs && root.prefs.activeLayout === "desktop"
-                            ? qsTr("In use: Basecamp Legacy desktop, built into Basecamp.")
+                            ? qsTr("In use: Basecamp Legacy (desktop), built into Basecamp.")
                             : qsTr("In use: Basecamp Legacy, built into Basecamp.")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textTertiary

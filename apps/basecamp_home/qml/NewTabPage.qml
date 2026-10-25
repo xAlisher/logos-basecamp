@@ -163,20 +163,32 @@ Rectangle {
     property real lastVisitAt: 0
     property int visit: 0
     property real now: Date.now()
+    // Whether the user could see this visit at all. Home is loaded at start
+    // and keeps running behind other tabs; what arrives then is not seen, and
+    // a visit nobody saw is no "since".
+    property bool visitSeen: false
+    // On screen: the shell hides home's view behind other tabs, which hides
+    // its window. Nothing is marked seen while it is hidden.
+    readonly property bool onScreen: Window.window !== null && Window.window.visibility !== Window.Hidden
+    onOnScreenChanged: if (root.onScreen && root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
 
     function startVisit() {
-        root.lastVisitAt = root.visitAt
+        if (root.visitSeen) root.lastVisitAt = root.visitAt
         root.visitAt = Date.now()
         root.now = root.visitAt
         root.newIds = ({})
         root.toMark = []
+        root.visitSeen = false
         root.visit += 1
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
 
     // `rows` are on screen: the unseen among them are new for this visit and
     // are marked seen shortly (they keep their dot until the next visit).
+    // Hidden, they are left alone, so the first look still counts them new.
     function noteShown(rows) {
+        if (!root.onScreen) return
+        root.visitSeen = true
         const r = M.addUnseen(root.newIds, rows)
         if (r.added.length === 0) return
         root.newIds = r.map

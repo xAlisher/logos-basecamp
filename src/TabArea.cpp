@@ -1339,8 +1339,13 @@ QWidget* TabArea::takeTab(const QString& key)
         rebuildSwitcher();
         updateCompactBar();
     } else if (keepSwitcher) {
-        // The last app went: the switcher closes on home.
+        // The last app went: the switcher closes on home, its search
+        // cleared as showSwitcher(false) would.
         m_switcherOpen = false;
+        if (!m_switcherSearch->text().isEmpty()) {
+            const QSignalBlocker block(m_switcherSearch);
+            m_switcherSearch->clear();
+        }
         int home = -1;
         for (int t = 0; t < m_tabs->count() && home < 0; ++t)
             if (isNewTabKey(m_tabs->tabData(t).toString()))

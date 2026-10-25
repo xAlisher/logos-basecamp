@@ -199,6 +199,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit homeQueryChanged();
         emit recentAppsChanged();
         emit appResultsChanged();
+        emit relatedAppsChanged();
     });
     connect(backend, &MainUIBackend::shellPreferencesChanged, this, &ShellApi::prefsChanged);
     connect(backend, &MainUIBackend::settingsSectionRequested, this, [this](const QString& section) {
@@ -232,6 +233,21 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         connect(model, &QAbstractItemModel::rowsInserted, this, &ShellApi::scheduleAppResults);
         connect(model, &QAbstractItemModel::rowsRemoved, this, &ShellApi::scheduleAppResults);
         connect(model, &QAbstractItemModel::dataChanged, this, &ShellApi::scheduleAppResults);
+    }
+    // Gated and coalesced like appResultsChanged: what relatedApps counts is
+    // the whole store, whatever home's text, so its own results cannot tell.
+    m_relatedTimer = new QTimer(this);
+    m_relatedTimer->setSingleShot(true);
+    m_relatedTimer->setInterval(150);
+    connect(m_relatedTimer, &QTimer::timeout, this, [this]() {
+        if (holds("home")) emit relatedAppsChanged();
+    });
+    if (auto* store = qobject_cast<ObjectStore*>(backend->objectStore())) {
+        const auto schedule = [this]() {
+            if (holds("home") && !m_relatedTimer->isActive()) m_relatedTimer->start();
+        };
+        connect(store, &ObjectStore::changed, this, schedule);
+        connect(store, &ObjectStore::disabledAppsChanged, this, schedule);
     }
     // Search: to the holder the request was made of, and only while it holds
     // the role. objectsChanged is a clock of every app's publishing; only the

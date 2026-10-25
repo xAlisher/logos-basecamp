@@ -162,8 +162,8 @@ public:
     Q_INVOKABLE QVariantList findApps(const QString& query);
     // home: the installed apps that hold objects of `type` (a type pill,
     // basecamp-experiments#36), most first, in findApps' row shape; apps
-    // switched off in Settings -> Search are left out. Read again when the
-    // pill's results change or on appResultsChanged.
+    // switched off in Settings -> Search are left out. Read again on
+    // relatedAppsChanged and on appResultsChanged.
     Q_INVOKABLE QVariantList relatedApps(const QString& type);
     // home: install an app found by findApps, through the shell's own install
     // dialog (nothing is installed without it). The host picks the repository.
@@ -217,6 +217,9 @@ signals:
     // home: findApps would answer differently (an app opened, closed,
     // installed or removed, the catalog arrived). Coalesced.
     void appResultsChanged();
+    // home: relatedApps would answer differently (some app published,
+    // retracted or was switched off). Coalesced.
+    void relatedAppsChanged();
     // Enter in the shell's bar while home is shown: open the first result.
     void homeQueryAccepted();
     // search: a view wants results; answer(requestId, ids) within 500 ms or
@@ -235,4 +238,5 @@ private:
     QPointer<MainUIBackend> m_backend;
     QString m_app;
     QTimer* m_appResultsTimer = nullptr;
+    QTimer* m_relatedTimer = nullptr;
 };

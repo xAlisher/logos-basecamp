@@ -100,8 +100,9 @@ Rectangle {
         root.appHits = root.rawQuery.length > 0 ? (shell.findApps(root.rawQuery) || []) : []
     }
     // Under a type pill: shell.relatedApps, the installed apps that publish
-    // that type, in the same row shape. Asked again with the pill's results
-    // (an app published or retracted) and when the host says apps changed.
+    // that type, in the same row shape. Asked again when the pill changes and
+    // when the host says the store or the apps changed; not with the pill's
+    // results, which follow the text and miss objects it does not match.
     property var relatedHits: []
     function refreshRelated() {
         root.relatedHits = root.pill && root.pill.type ? (shell.relatedApps(root.pill.type) || []) : []
@@ -113,6 +114,7 @@ Rectangle {
     Connections {
         target: shell
         function onAppResultsChanged() { root.refreshApps(); root.refreshRelated() }
+        function onRelatedAppsChanged() { root.refreshRelated() }
     }
 
     function openApp(hit) {
@@ -170,7 +172,12 @@ Rectangle {
     // On screen: the shell hides home's view behind other tabs, which hides
     // its window. Nothing is marked seen while it is hidden.
     readonly property bool onScreen: Window.window !== null && Window.window.visibility !== Window.Hidden
-    onOnScreenChanged: if (root.onScreen && root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
+    // Deferred: the shell shows the view before it starts the visit
+    // (clearSearch), and marking first would make the hidden visit "seen".
+    onOnScreenChanged: if (root.onScreen) Qt.callLater(root.noteFeedShown)
+    function noteFeedShown() {
+        if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
+    }
 
     function startVisit() {
         if (root.visitSeen) root.lastVisitAt = root.visitAt
@@ -248,7 +255,6 @@ Rectangle {
     function rebuildPill() {
         if (!root.pill) return
         root.pillRows = root.rowsOf(root.pillResults)
-        root.refreshRelated()
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
     function rowsOf(results) {

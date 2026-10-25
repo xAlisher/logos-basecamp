@@ -19,6 +19,8 @@ Column {
     // How many objects the bar and the pill match in all: a results model
     // stops at 200, so past that the feed says it shows only part.
     property int total: 0
+    // The bar's text: the cards mark what it matches (basecamp-experiments#46).
+    property string query: ""
 
     signal raiseRequested(string id, string action, string text)
 
@@ -42,6 +44,7 @@ Column {
             object: modelData
             now: feed.now
             isNew: feed.newIds[modelData.id] === true
+            query: feed.query
             namePrefix: "home.card." + modelData.key
             onActionRequested: (action, text) => feed.raiseRequested(modelData.id, action, text)
         }

@@ -181,6 +181,7 @@ qt_add_qml_module(basecamp_objects_qml
         Basecamp/Objects/ObjectCard.qml
         Basecamp/Objects/ObjectCardBody.qml
         Basecamp/Objects/ObjectCardLine.qml
+        Basecamp/Objects/ObjectCardMatchLine.qml
         Basecamp/Objects/ObjectCardIcon.qml
         Basecamp/Objects/ObjectCardStatus.qml
         Basecamp/Objects/ObjectCardAccount.qml
@@ -195,6 +196,7 @@ qt_add_qml_module(basecamp_objects_qml
         Basecamp/Objects/ObjectCardGeneric.qml
         Basecamp/Objects/ObjectCardFormat.qml
         Basecamp/Objects/ObjectFormat.js
+        Basecamp/Objects/ObjectHighlight.js
 )
 
 qt_add_qml_module(basecamp_icons_qml

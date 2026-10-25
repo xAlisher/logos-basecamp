@@ -1,6 +1,8 @@
 // The object cards' and home's pure JS (SHELL-OBJECTS-SPEC §3, §4, §7):
 // src/Basecamp/Objects/ObjectFormat.js (what a card writes for a type, a
 // time, an amount, a status, which actions it draws) and
+// src/Basecamp/Objects/ObjectHighlight.js (what the search matched, marked,
+// basecamp-experiments#46),
 // apps/basecamp_home/qml/BasecampHomeModules.js (modules as saved filters,
 // pills, the feed's order and "N new", rows that keep their places, the grid
 // layout). Each file runs in a bare QJSEngine, as QML would run a
@@ -39,17 +41,20 @@ class ObjectCardsTest : public QObject {
 
     QJSEngine m_format;
     QJSEngine m_home;
+    QJSEngine m_mark;
 
     QJSValue f(const QString& expr) { return m_format.evaluate(expr); }
     QJSValue h(const QString& expr) { return m_home.evaluate(expr); }
     QString fs(const QString& expr) { return f(expr).toString(); }
     QString hs(const QString& expr) { return h(expr).toString(); }
+    QString ms(const QString& expr) { return m_mark.evaluate(expr).toString(); }
 
 private slots:
     void initTestCase()
     {
         QVERIFY(load(m_format, QFINDTESTDATA("../src/Basecamp/Objects/ObjectFormat.js")));
         QVERIFY(load(m_home, QFINDTESTDATA("../apps/basecamp_home/qml/BasecampHomeModules.js")));
+        QVERIFY(load(m_mark, QFINDTESTDATA("../src/Basecamp/Objects/ObjectHighlight.js")));
     }
 
     // ── ObjectFormat.js ─────────────────────────────────────────────────
@@ -164,6 +169,56 @@ private slots:
         QCOMPARE(f("timeOf({ time: 5, updated: 9 })").toInt(), 5);
         QCOMPARE(f("timeOf({ updated: 9 })").toInt(), 9);
         QCOMPARE(f("timeOf({ time: 'now' })").toInt(), 0);
+    }
+
+    // ── ObjectHighlight.js ──────────────────────────────────────────────
+
+    // The issue's own cases: the start of each word a query word begins,
+    // case-insensitive, as the rankers match.
+    void markWordPrefixes()
+    {
+        const QString o = QStringLiteral("<font color=\"#ed7b58\">");
+        const QString c = QStringLiteral("</font>");
+        QCOMPARE(ms("mark('Sent 12.00 TST to Ada Morrow', 'ada', '#ed7b58')"),
+                 QStringLiteral("Sent 12.00 TST to ") + o + "Ada" + c + " Morrow");
+        QCOMPARE(ms("mark('Stub Wallet', 'wal', '#ed7b58')"), QStringLiteral("Stub ") + o + "Wal" + c + "let");
+        QCOMPARE(ms("mark('LEZ Wallet', 'WAL', '#ed7b58')"), QStringLiteral("LEZ ") + o + "Wal" + c + "let");
+        // Every query word; the longest one a word starts with.
+        QCOMPARE(ms("mark('Ada Morrow', 'mo ada mor', '#ed7b58')"),
+                 o + "Ada" + c + " " + o + "Mor" + c + "row");
+        // Word starts only: "ada" is not in "Canada"; punctuation splits words.
+        QCOMPARE(ms("mark('Canada', 'ada', '#ed7b58')"), QStringLiteral("Canada"));
+        QCOMPARE(ms("mark('re:ada-morrow', 'mor', '#ed7b58')"),
+                 QStringLiteral("re:ada-") + o + "mor" + c + "row");
+        // A query word longer than the word marks the word, not past it.
+        QCOMPARE(ms("ranges('Ada', 'adam').length").toInt(), 0);
+        QCOMPARE(ms("JSON.stringify(ranges('Ada Ada', 'a'))"), QStringLiteral("[[0,1],[4,5]]"));
+        // No query, no match or no valid colour: the text, escaped, unmarked.
+        QCOMPARE(ms("mark('Ada', '', '#ed7b58')"), QStringLiteral("Ada"));
+        QCOMPARE(ms("mark('Ada', '  ', '#ed7b58')"), QStringLiteral("Ada"));
+        QCOMPARE(ms("mark('Ada', 'ada', 'red\\\"><img src=x>')"), QStringLiteral("Ada"));
+        QCOMPARE(ms("mark(42, 'ada', '#ed7b58')"), QString());
+        QCOMPARE(ms("mark('', 'ada', '#ed7b58')"), QString());
+    }
+
+    // Publisher text stays plain (ADR-072): escaped before the one tag is
+    // added, matched or not.
+    void markEscapesPublisherText()
+    {
+        const QString o = QStringLiteral("<font color=\"#ed7b58\">");
+        const QString c = QStringLiteral("</font>");
+        QCOMPARE(ms("mark('<b>Ada</b> &amp; <img src=\"http://x/a.png\">', 'ada', '#ed7b58')"),
+                 QStringLiteral("&lt;b&gt;") + o + "Ada" + c
+                 + "&lt;/b&gt; &amp;amp; &lt;img src=&quot;http://x/a.png&quot;&gt;");
+        // A match inside what looks like a tag is still only text.
+        QCOMPARE(ms("mark('<img src=x>', 'img', '#ed7b58')"),
+                 QStringLiteral("&lt;") + o + "img" + c + " src=x&gt;");
+        QCOMPARE(ms("mark('<b>bold</b>', '', '#ed7b58')"), QStringLiteral("&lt;b&gt;bold&lt;/b&gt;"));
+        // Reads as the plain text would: line breaks, runs of spaces.
+        QCOMPARE(ms("escape('a\\nb\\r\\nc')"), QStringLiteral("a<br>b<br>c"));
+        QCOMPARE(ms("escape('a   b')"), QStringLiteral("a &nbsp;&nbsp;b"));
+        QCOMPARE(ms("mark('x  Ada', 'ada', '#ed7b58')"), QStringLiteral("x &nbsp;") + o + "Ada" + c);
+        QCOMPARE(ms("escape({})"), QString());
     }
 
     // ── BasecampHomeModules.js ──────────────────────────────────────────

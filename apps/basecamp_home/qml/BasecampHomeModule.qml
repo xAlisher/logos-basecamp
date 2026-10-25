@@ -167,6 +167,7 @@ Rectangle {
                     now: mod.now
                     compact: true
                     isNew: mod.newIds[modelData.id] === true
+                    query: mod.query
                     namePrefix: "home.card." + modelData.key
                     onActionRequested: (action, text) => mod.raiseRequested(modelData.id, action, text)
                 }
@@ -189,6 +190,7 @@ Rectangle {
                     object: modelData
                     now: mod.now
                     isNew: mod.newIds[modelData.id] === true
+                    query: mod.query
                     namePrefix: "home.card." + modelData.key
                     onActionRequested: (action, text) => mod.raiseRequested(modelData.id, action, text)
                 }
@@ -214,6 +216,7 @@ Rectangle {
                 object: modelData
                 now: mod.now
                 isNew: mod.newIds[modelData.id] === true
+                query: mod.query
                 namePrefix: "home.card." + modelData.key
                 onActionRequested: (action, text) => mod.raiseRequested(modelData.id, action, text)
                 // The strip is as tall as its tallest card.

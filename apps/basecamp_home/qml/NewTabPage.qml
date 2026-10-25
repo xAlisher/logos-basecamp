@@ -678,6 +678,7 @@ Rectangle {
             total: root.feedTotal
             now: root.now
             newIds: root.newIds
+            query: root.rawQuery
             onRaiseRequested: (id, action, text) => root.raise(id, action, text)
             onShownChanged: root.noteShown(root.feedRows.slice(0, feed.shown))
         }
@@ -762,7 +763,11 @@ Rectangle {
             anchors.rightMargin: Theme.spacing.medium
             anchors.verticalCenter: parent.verticalCenter
             elide: Text.ElideRight
-            text: appRowItem.hit.title || appRowItem.hit.name || ""
+            // The name escaped, what the bar's text matches marked
+            // (basecamp-experiments#46).
+            textFormat: Text.StyledText
+            text: ObjectCardFormat.mark(appRowItem.hit.title || appRowItem.hit.name || "", root.rawQuery,
+                                        Theme.palette.accentOrange)
             color: Theme.palette.text
         }
 

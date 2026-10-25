@@ -71,6 +71,10 @@ class ShellApi : public QObject {
     // search (Basecampium's phone layout); home then hides its own field.
     Q_PROPERTY(bool searchInBar READ searchInBar NOTIFY homeQueryChanged)
     Q_PROPERTY(QString homeQuery READ homeQuery NOTIFY homeQueryChanged)
+    // Recent apps: recently closed and recently installed, newest first, in
+    // installedApps' row shape plus recentKind ("closed" | "installed").
+    // Empty on a fresh profile; home then shows the role apps.
+    Q_PROPERTY(QVariantList recentApps READ recentApps NOTIFY recentAppsChanged)
 
 public:
     ShellApi(MainUIBackend* backend, const QString& appName, QObject* parent = nullptr);
@@ -109,6 +113,7 @@ public:
 
     bool searchInBar() const;
     QString homeQuery() const;
+    QVariantList recentApps() const;
 
     // settings
     Q_INVOKABLE void refreshRepositories();
@@ -191,6 +196,7 @@ signals:
     void appsChanged();
     void launcherSearchRequested(const QString& query);
     void homeQueryChanged();
+    void recentAppsChanged();
     // Enter in the shell's bar while home is shown: open the first result.
     void homeQueryAccepted();
     // search: a view wants results; answer(requestId, ids) within 500 ms or

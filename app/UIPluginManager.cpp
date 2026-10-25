@@ -78,6 +78,14 @@ UIPluginManager::UIPluginManager(LogosAPI* logosAPI,
     connect(this, &UIPluginManager::launcherAppsChanged,
             this, &UIPluginManager::recentlyClosedAppsChanged);
 
+    // Recently installed, for home's Recent apps. Its own file and key, so the
+    // welcome page's recently-closed list is unchanged.
+    m_recentlyInstalled = std::make_unique<RecentlyClosedStore>(
+        LogosBasecampPaths::baseDirectory() + "/recently-installed.ini",
+        QStringLiteral("recentlyInstalled"));
+    connect(this, &UIPluginManager::recentlyClosedAppsChanged,
+            this, &UIPluginManager::recentAppsChanged);
+
     m_pluginLoader = new PluginLoader(m_logosAPI, m_coreModuleManager, this);
     connect(m_pluginLoader, &PluginLoader::pluginLoaded,
             this, &UIPluginManager::onPluginLoaded);
@@ -170,6 +178,18 @@ void UIPluginManager::onUiPluginsFetched(const QVariantList& uiPlugins)
         }
         m_uiPluginMetadata[name] = pluginInfo;
     }
+
+    // An app that was not in the previous list was just installed: it goes
+    // first in home's Recent apps. Shell internals never show there.
+    bool installed = false;
+    for (const QString& name : m_installWatch.update(findAvailableUiPlugins())) {
+        if (isShellInternalApp(name) || !m_recentlyInstalled) continue;
+        qDebug() << "Recently installed:" << name;
+        m_recentlyInstalled->record(name);
+        installed = true;
+    }
+    if (installed)
+        emit recentAppsChanged();
 
     for (auto it = m_qmlPluginWidgets.cbegin(); it != m_qmlPluginWidgets.cend(); ++it)
         reloadLoadedPluginIcon(it.key(), it.value());
@@ -900,6 +920,28 @@ QVariantList UIPluginManager::recentlyClosedApps() const
     return apps;
 }
 
+QVariantList UIPluginManager::recentApps() const
+{
+    QVariantList apps;
+    if (!m_recentlyClosed || !m_recentlyInstalled) {
+        return apps;
+    }
+
+    // Filtered against what is installed now, like recentlyClosedApps().
+    const QStringList available = findAvailableUiPlugins();
+    for (const RecentApps::Item& item :
+         RecentApps::merge(m_recentlyClosed->entries(), m_recentlyInstalled->entries())) {
+        if (isShellInternalApp(item.name) || !available.contains(item.name)) {
+            continue;
+        }
+        QVariantMap row = buildAppRow(item.name);
+        row["recentKind"] = item.kind;
+        apps.append(row);
+    }
+
+    return apps;
+}
+
 void UIPluginManager::onAppLauncherClicked(const QString& appName)
 {
     qDebug() << "App launcher clicked:" << appName;
@@ -1281,6 +1323,10 @@ void UIPluginManager::teardownUiPluginWidgetNow(const QString& moduleName)
     if (m_recentlyClosed) {
         m_recentlyClosed->forget(moduleName);
         emit recentlyClosedAppsChanged();
+    }
+    if (m_recentlyInstalled) {
+        m_recentlyInstalled->forget(moduleName);
+        emit recentAppsChanged();
     }
 
     if (m_currentVisibleApp == moduleName) {

@@ -12,11 +12,13 @@ import "BasecampHomeModules.js" as M
 // Basecamp's home page (the `home` role, ADR-067): what a New tab shows.
 // The bar's text searches both your apps and what apps share with Basecamp
 // (SHELL-OBJECTS-SPEC §7): pills narrow the objects by type or app; below,
-// either the modules (saved filters, a grid that is one column on a phone)
-// or the feed (everything, newest first). Picking a tile asks the shell to
-// turn the current New tab into that app; a card's actions go to the app
-// that published it. It reads only `shell`, the role-gated object the host
-// injects.
+// either the feed (everything, newest first; the default) or the modules
+// (saved filters, a grid that is one column on a phone). Above them, Recent
+// apps: the ones closed or installed lately, newest first, then Applications,
+// Packages and Settings, which are apps like any other (basecamp-experiments#30).
+// Picking a tile asks the shell to turn the current New tab into that app; a
+// card's actions go to the app that published it. It reads only `shell`, the
+// role-gated object the host injects.
 //
 // The modules (order, size, pin, notify, the custom ones) live in memory
 // only: home has no settings store of its own yet, so a restart brings back
@@ -24,7 +26,6 @@ import "BasecampHomeModules.js" as M
 Rectangle {
     id: root
 
-    signal openSystemApp(string key)
     signal launchApp(string name)
 
     function focusSearch() { search.forceActiveFocus() }
@@ -49,18 +50,32 @@ Rectangle {
     readonly property int tileSize: 80
     readonly property int pitch: compact ? 108 : 124
 
-    readonly property var systemApps: [
-        { key: "sys:applications", name: qsTr("Applications"),    icon: BasecampIcons.dashboard },
-        { key: "sys:settings",     name: qsTr("Settings"),        icon: BasecampIcons.settings },
-        { key: "sys:packages",     name: qsTr("Package Manager"), icon: BasecampIcons.modules }
-    ]
-    readonly property var apps: {
-        // Apps that fill a role are already in the row below (or are this page).
+    // Every installed app you can open, by name. Applications, Packages and
+    // Settings are among them; home itself and the search ranker are not.
+    readonly property var hidden: {
         const roles = shell.roles || ({})
-        const roleApps = Object.keys(roles).map(r => roles[r])
-        const list = (shell.installedApps || []).filter(a => roleApps.indexOf(a.name) < 0)
+        return [roles.home || "", roles.search || ""].filter(n => n.length > 0)
+    }
+    readonly property var apps: {
+        const list = (shell.installedApps || []).filter(a => root.hidden.indexOf(a.name) < 0)
         list.sort((a, b) => (a.displayName || a.name).localeCompare(b.displayName || b.name))
         return list
+    }
+    // Recent apps: closed or installed lately, newest first (the host keeps
+    // both), then whichever of Applications, Packages and Settings is not
+    // already there. A fresh profile shows just those three.
+    readonly property int maxRecent: 12
+    readonly property var recentApps: {
+        const out = []
+        const add = a => {
+            if (a && root.hidden.indexOf(a.name) < 0 && !out.some(o => o.name === a.name))
+                out.push(a)
+        }
+        for (const a of (shell.recentApps || [])) add(a)
+        const roles = shell.roles || ({})
+        for (const role of ["launcher", "packages", "settings"])
+            add((shell.installedApps || []).find(a => a.name === (roles[role] || "")))
+        return out.slice(0, root.maxRecent)
     }
     readonly property var appNames: {
         const names = {}
@@ -71,22 +86,22 @@ Rectangle {
     function matches(label) {
         return root.query.length === 0 || label.toLowerCase().indexOf(root.query) >= 0
     }
-    readonly property var shownSystem: systemApps.filter(a => matches(a.name))
-    readonly property var shownApps: apps.filter(a => matches(a.displayName || a.name))
+    // With nothing typed, the row is Recent apps; typing searches every app.
+    readonly property var shownApps: root.query.length === 0
+        ? root.recentApps
+        : apps.filter(a => matches(a.displayName || a.name))
 
     function openFirst() {
-        if (shownApps.length > 0)
+        if (root.query.length > 0 && shownApps.length > 0)
             root.launchApp(shownApps[0].name)
-        else if (shownSystem.length > 0)
-            root.openSystemApp(shownSystem[0].key)
     }
 
     // ── objects ─────────────────────────────────────────────────────────
 
     // { type, app } narrowing every module and the feed; null = all.
     property var pill: null
-    // "grid" (modules) or "feed".
-    property string view: "grid"
+    // "feed" (the default) or "grid" (modules).
+    property string view: "feed"
     property var modules: M.defaultModules().map(M.sanitizeModule)
     readonly property var shownModules: M.ordered(root.modules)
 
@@ -153,7 +168,7 @@ Rectangle {
 
     // What the bar reads (§7): what it searches. The shell's bar on a phone
     // (shell.setBarPlaceholder), this page's own on a desktop.
-    readonly property string barPlaceholder: !root.pill ? qsTr("Search everything…")
+    readonly property string barPlaceholder: !root.pill ? qsTr("Search Basecamp…")
         : root.pill.type ? qsTr("Search %1…").arg(root.pillLabel(root.pill).toLowerCase())
                          : qsTr("Search %1…").arg(root.pillLabel(root.pill))
     onBarPlaceholderChanged: shell.setBarPlaceholder(root.barPlaceholder)
@@ -372,7 +387,18 @@ Rectangle {
             }
         }
 
-        // Your apps that match, in one row that scrolls sideways.
+        LogosText {
+            objectName: "home.recentApps.title"
+            visible: appRow.visible && root.query.length === 0
+            width: parent.width
+            text: qsTr("Recent apps")
+            font.pixelSize: Theme.typography.secondaryText
+            font.weight: Font.Medium
+            color: Theme.palette.textSecondary
+        }
+
+        // Recent apps, or with a query the apps that match, in one row that
+        // scrolls sideways.
         ListView {
             id: appRow
             objectName: "newTab.grid"
@@ -520,11 +546,9 @@ Rectangle {
             font.pixelSize: Theme.typography.secondaryText
         }
 
-        // The shell's own apps: small round buttons under a subtle divider,
-        // at the end of the page and centred. Search still finds them by name.
+        // The page's foot: a subtle divider and the credit, centred.
         Column {
-            id: systemRow
-            objectName: "newTab.systemRow"
+            objectName: "newTab.footer"
             anchors.horizontalCenter: parent.horizontalCenter
             topPadding: Theme.spacing.xlarge
             bottomPadding: Theme.spacing.xlarge * 1.5
@@ -535,58 +559,6 @@ Rectangle {
                 width: Math.min(root.width - 2 * root.sideMargin, 480)
                 height: 1
                 color: Theme.palette.borderHairline
-            }
-
-            Row {
-                anchors.horizontalCenter: parent.horizontalCenter
-                spacing: Theme.spacing.large
-
-                Repeater {
-                    model: root.systemApps
-                    delegate: AbstractButton {
-                        id: sys
-                        required property var modelData
-                        objectName: "newTab." + modelData.key
-                        readonly property bool matched: root.query.length === 0 || root.matches(modelData.name)
-                        width: Theme.minTouchTarget
-                        height: Theme.minTouchTarget
-                        hoverEnabled: true
-                        opacity: matched ? 1.0 : 0.35
-                        onClicked: root.openSystemApp(modelData.key)
-                        Accessible.name: modelData.name
-
-                        LogosGlow {
-                            anchors.fill: parent
-                            radius: width / 2
-                            active: sys.hovered
-                        }
-
-                        Rectangle {
-                            anchors.fill: parent
-                            radius: width / 2
-                            color: sys.pressed ? Theme.palette.accentOrange
-                                 : sys.hovered ? Theme.palette.backgroundTertiary
-                                 : Theme.palette.backgroundSecondary
-                            border.color: sys.hovered ? Theme.palette.border : Theme.palette.borderHairline
-                            border.width: 1
-                            Behavior on color { ColorAnimation { duration: 120 } }
-
-                            LogosIcon {
-                                anchors.centerIn: parent
-                                width: 18
-                                height: 18
-                                source: sys.modelData.icon
-                                color: sys.pressed ? Theme.palette.accentForeground
-                                     : sys.hovered ? Theme.palette.text : Theme.palette.textSecondary
-                                brightness: 1.0
-                            }
-                        }
-
-                        ToolTip.visible: sys.hovered
-                        ToolTip.delay: 300
-                        ToolTip.text: modelData.name
-                    }
-                }
             }
 
             LogosText {

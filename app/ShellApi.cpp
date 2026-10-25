@@ -195,6 +195,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit prefsChanged();
         emit appsChanged();
         emit homeQueryChanged();
+        emit recentAppsChanged();
     });
     connect(backend, &MainUIBackend::shellPreferencesChanged, this, &ShellApi::prefsChanged);
     connect(backend, &MainUIBackend::settingsSectionRequested, this, [this](const QString& section) {
@@ -208,6 +209,11 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
     });
     connect(backend, &MainUIBackend::homeQueryAccepted, this, [this]() {
         if (holds("home")) emit homeQueryAccepted();
+    });
+    // Gated: it moves when the user closes or installs an app, timing only the
+    // holder may observe.
+    connect(backend, &MainUIBackend::recentAppsChanged, this, [this]() {
+        if (holds("home")) emit recentAppsChanged();
     });
     // Search: to the holder the request was made of, and only while it holds
     // the role. objectsChanged is a clock of every app's publishing; only the
@@ -384,6 +390,11 @@ QStringList ShellApi::loadingModules() const
 
 bool ShellApi::searchInBar() const { return holds("home") && m_backend->homeSearchInBar(); }
 QString ShellApi::homeQuery() const { return holds("home") ? m_backend->homeQuery() : QString(); }
+
+QVariantList ShellApi::recentApps() const
+{
+    return holds("home") ? withServedIcons(m_backend->recentApps()) : QVariantList();
+}
 
 void ShellApi::launch(const QString& name)
 {

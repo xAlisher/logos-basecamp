@@ -116,6 +116,8 @@ class MainUIBackend : public QObject {
     Q_PROPERTY(QString lastSearchRanker READ lastSearchRanker NOTIFY lastSearchRankerChanged)
     // Most-recently-closed apps, persisted across restarts.
     Q_PROPERTY(QVariantList recentlyClosedApps READ recentlyClosedApps NOTIFY recentlyClosedAppsChanged)
+    // Home's Recent apps: recently closed and recently installed, newest first.
+    Q_PROPERTY(QVariantList recentApps READ recentApps NOTIFY recentAppsChanged)
     // role -> the app filling it ("" when nothing can): home, launcher, packages,
     // settings, search (SHELL-ROLES-SPEC.md). The shell opens roles, not apps.
     Q_PROPERTY(QVariantMap roles READ roles NOTIFY rolesChanged)
@@ -182,6 +184,7 @@ public:
     // Delegations to UIPluginManager.
     QVariantList launcherApps() const;
     QVariantList recentlyClosedApps() const;
+    QVariantList recentApps() const;
     QString      currentVisibleApp() const;
     QStringList  loadingModules() const;
 
@@ -451,6 +454,7 @@ signals:
     void catalogInstallFailed(const QString& name, const QString& error);
     void launcherAppsChanged();
     void recentlyClosedAppsChanged();
+    void recentAppsChanged();
     void currentVisibleAppChanged();
     void loadingModulesChanged();
     void navigateToApps();

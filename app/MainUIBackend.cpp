@@ -213,6 +213,8 @@ MainUIBackend::MainUIBackend(LogosAPI* logosAPI, ICoreRuntime* core,
             this,              &MainUIBackend::launcherAppsChanged);
     connect(m_uiPluginManager, &UIPluginManager::recentlyClosedAppsChanged,
             this,              &MainUIBackend::recentlyClosedAppsChanged);
+    connect(m_uiPluginManager, &UIPluginManager::recentAppsChanged,
+            this,              &MainUIBackend::recentAppsChanged);
     connect(m_uiPluginManager, &UIPluginManager::loadingModulesChanged,
             this,              &MainUIBackend::loadingModulesChanged);
     connect(m_uiPluginManager, &UIPluginManager::currentVisibleAppChanged,
@@ -408,6 +410,7 @@ void MainUIBackend::refreshCoreModulesModel()
 
 QVariantList MainUIBackend::launcherApps() const     { return m_uiPluginManager->launcherApps(); }
 QVariantList MainUIBackend::recentlyClosedApps() const { return m_uiPluginManager->recentlyClosedApps(); }
+QVariantList MainUIBackend::recentApps() const { return m_uiPluginManager->recentApps(); }
 QString      MainUIBackend::currentVisibleApp() const{ return m_uiPluginManager->currentVisibleApp(); }
 QStringList  MainUIBackend::loadingModules() const   { return m_uiPluginManager->loadingModules(); }
 

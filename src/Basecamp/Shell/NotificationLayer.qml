@@ -78,9 +78,10 @@ Item {
                 const t = toasts.get(i)
                 if (n.tag !== "" && t.app === n.app && t.tag === n.tag) { toasts.remove(i); break }
             }
-            // Full (a phone's one): a calm toast never pushes out a warning or
+            // A phone's one slot: a calm toast never pushes out a warning or
             // an error (Reopen after a crash); it is a card in the feed anyway.
-            if (calm && toasts.count >= root.maxToasts) {
+            // A desktop keeps three and trims the oldest, as before.
+            if (root.compact && calm && toasts.count >= root.maxToasts) {
                 const last = toasts.get(toasts.count - 1)
                 if (last.level !== "info" && last.level !== "success") return
             }

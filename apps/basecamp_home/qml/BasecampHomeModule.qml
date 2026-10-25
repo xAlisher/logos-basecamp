@@ -53,6 +53,21 @@ Rectangle {
     border.width: 1
     border.color: Theme.palette.borderHairline
 
+    // The cards it draws, in reading order: home's arrow keys step through
+    // them (basecamp-experiments#48). A strip gives the ones it has made.
+    function navCards() {
+        const out = []
+        const add = it => { if (it && it.visible) out.push(it) }
+        if (!mod.visible) return out
+        if (mod.size === "small")
+            for (let i = 0; i < smallRepeater.count; ++i) add(smallRepeater.itemAt(i))
+        else if (cards.visible)
+            for (let i = 0; i < cardRepeater.count; ++i) add(cardRepeater.itemAt(i))
+        else if (strip.visible)
+            for (let i = 0; i < strip.count; ++i) add(strip.itemAtIndex(i))
+        return out
+    }
+
     function refresh() {
         mod.order = null
         if (mod.filter === null) {
@@ -159,6 +174,7 @@ Rectangle {
             width: parent.width
             spacing: Theme.spacing.tiny
             Repeater {
+                id: smallRepeater
                 model: mod.size === "small" ? mod.rows : []
                 delegate: ObjectCard {
                     required property var modelData
@@ -183,6 +199,7 @@ Rectangle {
             width: parent.width
             spacing: Theme.spacing.small
             Repeater {
+                id: cardRepeater
                 model: cards.visible ? mod.rows : []
                 delegate: ObjectCard {
                     required property var modelData
@@ -212,6 +229,7 @@ Rectangle {
             model: visible ? mod.rows : []
             delegate: ObjectCard {
                 required property var modelData
+                required property int index
                 width: strip.cardWidth
                 object: modelData
                 now: mod.now
@@ -219,6 +237,8 @@ Rectangle {
                 query: mod.query
                 namePrefix: "home.card." + modelData.key
                 onActionRequested: (action, text) => mod.raiseRequested(modelData.id, action, text)
+                // Focused from the keyboard: scrolled into the strip.
+                onActiveFocusChanged: if (activeFocus) strip.positionViewAtIndex(index, ListView.Contain)
                 // The strip is as tall as its tallest card.
                 onImplicitHeightChanged: if (implicitHeight > strip.stripHeight) strip.stripHeight = implicitHeight
                 Component.onCompleted: if (implicitHeight > strip.stripHeight) strip.stripHeight = implicitHeight

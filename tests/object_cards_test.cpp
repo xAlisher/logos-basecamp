@@ -5,8 +5,9 @@
 // basecamp-experiments#46),
 // apps/basecamp_home/qml/BasecampHomeModules.js (modules as saved filters,
 // pills, the feed's order and "N new", rows that keep their places, the grid
-// layout). Each file runs in a bare QJSEngine, as QML would run a
-// `.pragma library` script; the QML around them is checked headlessly.
+// layout, where the arrow keys take the focus). Each file runs in a bare
+// QJSEngine, as QML would run a `.pragma library` script; the QML around
+// them is checked headlessly.
 
 #include <QFile>
 #include <QJSEngine>
@@ -48,6 +49,15 @@ class ObjectCardsTest : public QObject {
     QString fs(const QString& expr) { return f(expr).toString(); }
     QString hs(const QString& expr) { return h(expr).toString(); }
     QString ms(const QString& expr) { return m_mark.evaluate(expr).toString(); }
+
+    // Where an arrow takes the focus: "where:index", or "-" when the key is
+    // not home's.
+    QString nav(const QString& from, const QString& key, int tiles, int rows, int lastTile = 0)
+    {
+        return hs(QStringLiteral("(function(){ var t = navMove(%1, '%2', %3, %4, %5);"
+                                 " return t ? t.where + (t.where === 'search' ? '' : ':' + t.index) : '-' })()")
+                      .arg(from, key).arg(tiles).arg(rows).arg(lastTile));
+    }
 
 private slots:
     void initTestCase()
@@ -162,6 +172,15 @@ private slots:
         QVERIFY(f("offersView(actions({ actions: [ { id: 'view', label: 'Details' } ] }))").toBool());
         QVERIFY(f("offersView(actions({ actions: [ { id: 'show', label: 'View' } ] }))").toBool());
         QVERIFY(!f("offersView(actions({ actions: [ { id: 'join', label: 'Join' } ] }))").toBool());
+        // Enter on a card (#48): the first action, else View; a compact row
+        // draws no actions, so View.
+        QCOMPARE(fs("primaryAction(actions({ actions: [ { id: 'pay', label: 'Pay' }, { id: 'no' } ] }), false).id"),
+                 QStringLiteral("pay"));
+        QCOMPARE(fs("primaryAction(actions({ actions: [ { id: 'reply', input: 'text' } ] }), false).input"),
+                 QStringLiteral("text"));
+        QCOMPARE(fs("primaryAction(actions({ actions: [ { id: 'pay' } ] }), true).id"), QStringLiteral("open"));
+        QCOMPARE(fs("primaryAction(actions({}), false).id"), QStringLiteral("open"));
+        QCOMPARE(fs("primaryAction(actions({ actions: [ { id: 'open' } ] }), false).id"), QStringLiteral("open"));
     }
 
     void timeOf()
@@ -377,6 +396,71 @@ private slots:
         QCOMPARE(hs("g1.items.map(i => i.col + ':' + i.y).join(' ')"), QStringLiteral("0:0 0:110"));
         QCOMPARE(h("g1.height").toInt(), 160);
         QCOMPARE(h("layout([], [], 3, 10).height").toInt(), 0);
+    }
+
+    // ── keyboard (basecamp-experiments#48) ──────────────────────────────
+
+    void keyboardNavigation()
+    {
+        const QString search = QStringLiteral("{ where: 'search' }");
+        auto tile = [](int i) { return QStringLiteral("{ where: 'tile', index: %1 }").arg(i); };
+        auto row = [](int i) { return QStringLiteral("{ where: 'row', index: %1 }").arg(i); };
+
+        // Down from the search: the first Recent app, else the first row
+        // (a query hides Recent apps: "wal", Down lands on the first app).
+        QCOMPARE(nav(search, "down", 3, 5), QStringLiteral("tile:0"));
+        QCOMPARE(nav(search, "down", 0, 5), QStringLiteral("row:0"));
+        QCOMPARE(nav(search, "down", 0, 0), QStringLiteral("-"));
+        // Up, Left and Right in the search stay the field's own.
+        QCOMPARE(nav(search, "up", 3, 5), QStringLiteral("-"));
+        QCOMPARE(nav(search, "left", 3, 5), QStringLiteral("-"));
+
+        // Along Recent apps, stopping at both ends.
+        QCOMPARE(nav(tile(0), "right", 3, 5), QStringLiteral("tile:1"));
+        QCOMPARE(nav(tile(2), "right", 3, 5), QStringLiteral("tile:2"));
+        QCOMPARE(nav(tile(1), "left", 3, 5), QStringLiteral("tile:0"));
+        QCOMPARE(nav(tile(0), "left", 3, 5), QStringLiteral("tile:0"));
+        // Up from the row: the search; Down: the first row, or stay.
+        QCOMPARE(nav(tile(2), "up", 3, 5), QStringLiteral("search"));
+        QCOMPARE(nav(tile(2), "down", 3, 5), QStringLiteral("row:0"));
+        QCOMPARE(nav(tile(2), "down", 3, 0), QStringLiteral("tile:2"));
+
+        // Down the rows (app rows, then cards), stopping at the last.
+        QCOMPARE(nav(row(0), "down", 3, 5), QStringLiteral("row:1"));
+        QCOMPARE(nav(row(4), "down", 3, 5), QStringLiteral("row:4"));
+        QCOMPARE(nav(row(3), "up", 3, 5), QStringLiteral("row:2"));
+        // Up from the first row: back to the tile it came from, or the search.
+        QCOMPARE(nav(row(0), "up", 3, 5, 2), QStringLiteral("tile:2"));
+        QCOMPARE(nav(row(0), "up", 3, 5, 9), QStringLiteral("tile:2"));
+        QCOMPARE(nav(row(0), "up", 0, 5), QStringLiteral("search"));
+        // Left and Right in a column are not home's (a card's own buttons).
+        QCOMPARE(nav(row(1), "left", 3, 5), QStringLiteral("-"));
+        QCOMPARE(nav(row(1), "right", 3, 5), QStringLiteral("-"));
+        // Rows that shrank under the focus: clamped.
+        QCOMPARE(nav(row(7), "down", 0, 3), QStringLiteral("row:2"));
+        QCOMPARE(nav(QStringLiteral("null"), "down", 3, 5), QStringLiteral("-"));
+    }
+
+    void typingGoesToTheSearch()
+    {
+        const int shift = 0x02000000, ctrl = 0x04000000, alt = 0x08000000, meta = 0x10000000;
+        // A script error would read as true below: every answer must be a bool.
+        QVERIFY(h("typeof typesText('w', 0) === 'boolean' && typeof typesText('\\r', 0) === 'boolean'").toBool());
+        QVERIFY(h("typesText('w', 0)").toBool());
+        QVERIFY(h(QStringLiteral("typesText('W', %1)").arg(shift)).toBool());
+        QVERIFY(h("typesText(' ', 0)").toBool());
+        QVERIFY(h("typesText('\\u00e9', 0)").toBool());
+        QVERIFY(!h(QStringLiteral("typesText('k', %1)").arg(ctrl)).toBool());
+        QVERIFY(!h(QStringLiteral("typesText('k', %1)").arg(alt)).toBool());
+        QVERIFY(!h(QStringLiteral("typesText('k', %1)").arg(meta)).toBool());
+        // Arrows, Enter, Esc, Tab, Backspace and Delete type nothing.
+        QVERIFY(!h("typesText('', 0)").toBool());
+        QVERIFY(!h("typesText('\\r', 0)").toBool());
+        QVERIFY(!h("typesText('\\u001b', 0)").toBool());
+        QVERIFY(!h("typesText('\\t', 0)").toBool());
+        QVERIFY(!h("typesText('\\b', 0)").toBool());
+        QVERIFY(!h("typesText('\\u007f', 0)").toBool());
+        QVERIFY(!h("typesText(undefined, 0)").toBool());
     }
 };
 

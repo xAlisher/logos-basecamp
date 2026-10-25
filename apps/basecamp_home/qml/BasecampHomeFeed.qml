@@ -24,6 +24,17 @@ Column {
 
     signal raiseRequested(string id, string action, string text)
 
+    // The cards drawn, top to bottom: home's arrow keys step through them
+    // (basecamp-experiments#48).
+    function navCards() {
+        const out = []
+        for (let i = 0; i < cardRepeater.count; ++i) {
+            const it = cardRepeater.itemAt(i)
+            if (it) out.push(it)
+        }
+        return out
+    }
+
     objectName: "home.feed"
     spacing: Theme.spacing.small
 
@@ -37,6 +48,7 @@ Column {
     }
 
     Repeater {
+        id: cardRepeater
         model: feed.rows.slice(0, feed.shown)
         delegate: ObjectCard {
             required property var modelData

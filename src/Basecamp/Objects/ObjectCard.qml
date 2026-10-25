@@ -69,10 +69,30 @@ Rectangle {
                                  : column.implicitHeight + 2 * Theme.spacing.medium
     radius: Theme.spacing.radiusLarge
     color: tap.pressed ? Theme.palette.backgroundTertiary : Theme.palette.backgroundSecondary
-    border.width: 1
-    border.color: tap.containsMouse ? Theme.palette.border : Theme.palette.borderHairline
+    // Focused from the keyboard: an accent ring, drawn inside, so nothing
+    // moves (basecamp-experiments#48).
+    border.width: card.activeFocus ? 2 : 1
+    border.color: card.activeFocus ? Theme.palette.accentOrange
+                : tap.containsMouse ? Theme.palette.border : Theme.palette.borderHairline
+    activeFocusOnTab: true
     Accessible.role: Accessible.Button
     Accessible.name: F.str(card.object.title)
+    Accessible.focusable: true
+
+    // Enter on the focused card: what its primary button does (the first
+    // action, a reply field opened for a text one), else View. A focused
+    // action button inside is not the card: the key passes on.
+    function activate() {
+        const a = F.primaryAction(card.actions, card.compact)
+        if (a.input === "text") {
+            card.replyAction = a.id
+            reply.forceActiveFocus()
+        } else {
+            card.actionRequested(a.id, "")
+        }
+    }
+    Keys.onReturnPressed: event => { if (card.activeFocus) card.activate(); else event.accepted = false }
+    Keys.onEnterPressed: event => { if (card.activeFocus) card.activate(); else event.accepted = false }
 
     function sendReply() {
         const text = reply.text.trim()

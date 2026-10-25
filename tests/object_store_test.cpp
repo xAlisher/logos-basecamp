@@ -88,6 +88,7 @@ private slots:
     void testCountsOfType();
     void testSignalsCarryTheApp();
     void testEnvelopesAreCanonicalPayloads();
+    void testIconFullBleedIsStampedPerApp();
 
 private:
     ObjectStore* makeStore()
@@ -131,6 +132,7 @@ void TestObjectStore::testHostFieldsCannotBeSupplied()
     o[QStringLiteral("app")] = kChat;
     o[QStringLiteral("seen")] = true;
     o[QStringLiteral("icon")] = QStringLiteral("https://evil.example/x.png");
+    o[QStringLiteral("iconFullBleed")] = true;
     QStringList ids;
     QCOMPARE(store->publish(kWallet, batch({ o }), nullptr, &ids), QString());
     const QVariantMap stored = store->get(ids.first());
@@ -138,7 +140,25 @@ void TestObjectStore::testHostFieldsCannotBeSupplied()
     QVERIFY(stored.value(QStringLiteral("id")).toString() != QStringLiteral("forged"));
     QCOMPARE(stored.value(QStringLiteral("seen")).toBool(), false);
     QCOMPARE(stored.value(QStringLiteral("icon")).toString(), QStringLiteral("file:///icons/wallet_ui"));
+    QCOMPARE(stored.value(QStringLiteral("iconFullBleed")).toBool(), false);
     QCOMPARE(store->count(kChat), 0);
+}
+
+// A card draws the publisher's icon with the shared app tile, which needs to
+// know whether that icon fills the tile (basecamp-experiments#40). The host
+// says so per app; without a resolver, or for an app it says no to, false.
+void TestObjectStore::testIconFullBleedIsStampedPerApp()
+{
+    std::unique_ptr<ObjectStore> store(makeStore());
+    QStringList ids;
+    QCOMPARE(store->publish(kWallet, batch({ tx(QStringLiteral("tx:1")) }), nullptr, &ids), QString());
+    QCOMPARE(store->get(ids.first()).value(QStringLiteral("iconFullBleed")).toBool(), false);
+
+    store->setIconFullBleedResolver([](const QString& app) { return app == kWallet; });
+    QCOMPARE(store->publish(kWallet, batch({ tx(QStringLiteral("tx:2")) }), nullptr, &ids), QString());
+    QCOMPARE(store->get(ids.last()).value(QStringLiteral("iconFullBleed")).toBool(), true);
+    QCOMPARE(store->publish(kChat, batch({ tx(QStringLiteral("tx:3")) }), nullptr, &ids), QString());
+    QCOMPARE(store->get(ids.last()).value(QStringLiteral("iconFullBleed")).toBool(), false);
 }
 
 void TestObjectStore::testUnknownFieldsAreDropped()

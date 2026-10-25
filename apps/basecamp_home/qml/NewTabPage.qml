@@ -743,26 +743,15 @@ Rectangle {
                  : appRowItem.hovered ? Theme.palette.backgroundSecondary : "transparent"
         }
 
-        LogosTile {
+        BasecampAppTile {
             id: appIcon
             anchors.left: parent.left
             anchors.leftMargin: Theme.spacing.tiny
             anchors.verticalCenter: parent.verticalCenter
+            size: 40
             label: appRowItem.hit.title || appRowItem.hit.name || ""
             source: appRowItem.hit.icon || ""
-            tileSize: 40
-            radius: Theme.spacing.radiusMedium
-            fallbackColor: Theme.palette.surfaceRaised
-            insetArtwork: appRowItem.hit.fullBleed !== true
-            interactive: false
-            implicitWidth: 40
-            implicitHeight: 40
-            padding: 0
-            topInset: 0
-            bottomInset: 0
-            leftInset: 0
-            rightInset: 0
-            Accessible.ignored: true
+            fullBleed: appRowItem.hit.fullBleed === true
         }
 
         LogosText {
@@ -817,7 +806,6 @@ Rectangle {
 
         property string key
         property string label
-        property url glyph: ""
         property string artwork: ""
         property bool fullBleed: false
         property bool loading: false
@@ -848,35 +836,19 @@ Rectangle {
 
             LogosGlow {
                 anchors.fill: parent
-                radius: Theme.spacing.radiusLarge
+                radius: artTile.radius
                 active: tile.hovered
             }
 
-            Rectangle {
-                anchors.fill: parent
-                visible: tile.artwork.length === 0
-                radius: Theme.spacing.radiusLarge
-                color: tile.pressed ? Theme.palette.accentOrange : Theme.palette.surfaceRaised
-
-                LogosIcon {
-                    anchors.centerIn: parent
-                    width: 30
-                    height: 30
-                    source: tile.glyph
-                    color: tile.pressed ? Theme.palette.accentForeground : Theme.palette.text
-                    brightness: 1.0
-                }
-            }
-
-            LogosTile {
+            // The app's icon, or its letters when it has none.
+            BasecampAppTile {
+                id: artTile
                 anchors.centerIn: parent
-                visible: tile.artwork.length > 0 && !tile.loading
-                label: tile.key
+                visible: !tile.loading
+                size: root.tileSize
+                label: tile.label
                 source: tile.artwork
-                fallbackColor: Theme.palette.surfaceRaised
-                insetArtwork: !tile.fullBleed
-                interactive: false
-                tileSize: root.tileSize
+                fullBleed: tile.fullBleed
             }
 
             BusyIndicator {

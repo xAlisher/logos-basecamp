@@ -1,5 +1,7 @@
 #include "DesktopArea.h"
 
+#include "AppTileIcon.h"
+
 #include <QCloseEvent>
 #include <QIcon>
 #include <QLocale>
@@ -47,8 +49,10 @@ public:
     {
         setFixedHeight(kHeight);
         setMouseTracking(true);
-        const QIcon icon(iconPath);
-        if (!iconPath.isEmpty() && !icon.isNull())
+        // The app's tile, rounded like everywhere else (AppTileIcon.h).
+        const QIcon icon = appTileIcon(iconPath, title, tok("surfaceRaised", "#232323"),
+                                       tok("text", "#FFFFFF"));
+        if (!icon.isNull())
             m_icon = icon.pixmap(QSize(18, 18), devicePixelRatioF());
     }
 

@@ -268,6 +268,8 @@ QVariantList UIPluginManager::uiModules() const
         module["isLoaded"] = m_loadedUiModules.contains(pluginName) || m_qmlPluginWidgets.contains(pluginName);
         module["isMainUi"] = (pluginName == "main_ui");
         module["iconPath"] = pluginIconUrl(pluginName);
+        module["supportsFullBleedIcon"] =
+            AppsModel::supportsFullBleedIcon(pluginManifestVersion(pluginName));
         module["displayName"] = meta.value("displayName");
         module["description"] = meta.value("description");
         module["repositoryUrl"] = meta.value("repositoryUrl");
@@ -1447,6 +1449,14 @@ QString UIPluginManager::pluginIconUrl(const QString& pluginName, bool forWidget
     if (!m_uiPluginMetadata.contains(pluginName)) {
         return "";
     }
+
+    // The Package Manager is a separate package whose own icon is a grey glyph
+    // on a transparent square. It is one of the three system apps, so Basecamp
+    // draws it with the system look Applications and Settings ship: a square
+    // on the shared background, rounded by the tile (basecamp-experiments#40).
+    static const QString kSystemPackagesIcon = QStringLiteral(":/icons/system/package_manager.svg");
+    if (pluginName == QLatin1String("package_manager_ui") && QFile::exists(kSystemPackagesIcon))
+        return forWidgetIcon ? kSystemPackagesIcon : QStringLiteral("qrc") + kSystemPackagesIcon;
 
     const QVariantMap& meta = m_uiPluginMetadata[pluginName];
     QString iconPath = meta.value("icon").toString();

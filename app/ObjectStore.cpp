@@ -181,7 +181,7 @@ const QStringList kEnvelopeFields = {
 };
 const QStringList kHostFields = {
     QStringLiteral("id"), QStringLiteral("app"), QStringLiteral("updated"),
-    QStringLiteral("seen"), QStringLiteral("icon"),
+    QStringLiteral("seen"), QStringLiteral("icon"), QStringLiteral("iconFullBleed"),
 };
 
 bool stringList(const QVariant& v, int maxItems, int maxEach)
@@ -496,12 +496,14 @@ QString ObjectStore::publishBatch(const QString& app, const QVariantMap& params,
 
     const qint64 t = now();
     const QString icon = m_iconFor ? m_iconFor(app) : QString();
+    const bool iconFullBleed = m_iconFullBleedFor && m_iconFullBleedFor(app);
     QSet<QString>& mine = m_byApp[app];
     for (QVariantMap o : std::as_const(clean)) {
         const QString id = idFor(app, o.value(QStringLiteral("key")).toString());
         o[QStringLiteral("id")] = id;
         o[QStringLiteral("app")] = app;
         o[QStringLiteral("icon")] = icon;
+        o[QStringLiteral("iconFullBleed")] = iconFullBleed;
         o[QStringLiteral("updated")] = t;
         if (!o.contains(QStringLiteral("time")))
             o[QStringLiteral("time")] = t;

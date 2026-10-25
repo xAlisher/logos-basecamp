@@ -48,6 +48,8 @@ set(SOURCES
     DesktopArea.cpp
     TabArea.h
     TabArea.cpp
+    AppTileIcon.h
+    AppTileIcon.cpp
     ShellPrefs.h
     ShellPrefs.cpp
     ShortcutBridge.h
@@ -202,6 +204,7 @@ qt_add_qml_module(basecamp_icons_qml
     QML_FILES
         Basecamp/Icons/BasecampIcons.qml
         Basecamp/Icons/BasecampLogo.qml
+        Basecamp/Icons/BasecampAppTile.qml
         Basecamp/Icons/TintedSvg.qml
     RESOURCES
         Basecamp/Icons/logos-lambda.svg

@@ -102,6 +102,7 @@ Item {
         property bool fullBleed: false
         property bool loading: false
 
+        readonly property bool isShellApp: glyph.toString().length > 0
         readonly property bool open: root.openKeys.indexOf(key) >= 0
         readonly property bool front: root.activeKey === key
 
@@ -124,15 +125,15 @@ Item {
 
             LogosGlow {
                 anchors.fill: parent
-                radius: Theme.spacing.radiusLarge
+                radius: appTile.radius
                 active: item.hovered
             }
 
-            // Shell apps: a glyph on a surface tile.
+            // Shell apps: a glyph on a surface tile, shaped like the app tiles.
             Rectangle {
                 anchors.fill: parent
-                visible: item.artwork.length === 0
-                radius: Theme.spacing.radiusLarge
+                visible: item.isShellApp
+                radius: appTile.radius
                 color: item.pressed ? Theme.palette.accentOrange : Theme.palette.surfaceRaised
 
                 LogosIcon {
@@ -145,16 +146,15 @@ Item {
                 }
             }
 
-            // Installed apps: their own artwork, as in the sidebar.
-            LogosTile {
+            // Installed apps: their icon, or their letters when they have none.
+            BasecampAppTile {
+                id: appTile
                 anchors.centerIn: parent
-                visible: item.artwork.length > 0 && !item.loading
-                label: item.key
+                visible: !item.isShellApp && !item.loading
+                size: root.tileSize
+                label: item.label
                 source: item.artwork
-                fallbackColor: Theme.palette.surfaceRaised
-                insetArtwork: !item.fullBleed
-                interactive: false
-                tileSize: root.tileSize
+                fullBleed: item.fullBleed
             }
 
             BusyIndicator {

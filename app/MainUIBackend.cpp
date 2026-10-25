@@ -45,6 +45,13 @@
 // the test harness. Unqualified below to keep the use sites unchanged.
 using namespace ShellIntents;
 
+// Whether an app's icon fills its tile (manifest 0.4.0+), for the app rows
+// and cards drawn with the shared tile (basecamp-experiments#40).
+static bool iconFillsTile(const UIPluginManager* plugins, const QString& name)
+{
+    return plugins && AppsModel::supportsFullBleedIcon(plugins->pluginManifestVersion(name));
+}
+
 MainUIBackend::MainUIBackend(LogosAPI* logosAPI, ICoreRuntime* core,
                              const LogosBasecamp::HostProfile& hostProfile, QObject* parent)
     : QObject(parent)
@@ -113,6 +120,9 @@ MainUIBackend::MainUIBackend(LogosAPI* logosAPI, ICoreRuntime* core,
     m_objects = new ObjectStore(this);
     m_objects->setIconResolver([this](const QString& app) {
         return m_uiPluginManager->pluginIconUrl(app);
+    });
+    m_objects->setIconFullBleedResolver([this](const QString& app) {
+        return iconFillsTile(m_uiPluginManager, app);
     });
     // Notifications are cards in the home feed, published for their sender.
     new NotificationObjects(m_notifications, m_objects, this);
@@ -740,6 +750,7 @@ QVariantList MainUIBackend::roleCandidates(const QString& role) const
             { QStringLiteral("displayName"), displayNameFor(name) },
             { QStringLiteral("icon"),
               m_uiPluginManager ? m_uiPluginManager->pluginIconUrl(name) : QString() },
+            { QStringLiteral("supportsFullBleedIcon"), iconFillsTile(m_uiPluginManager, name) },
             { QStringLiteral("current"), name == current },
             { QStringLiteral("isDefault"), name == fallback },
         });
@@ -1354,6 +1365,7 @@ QVariantList MainUIBackend::notificationApps() const
             { QStringLiteral("name"), name },
             { QStringLiteral("displayName"), display.isEmpty() ? name : display },
             { QStringLiteral("icon"), m_uiPluginManager->pluginIconUrl(name) },
+            { QStringLiteral("supportsFullBleedIcon"), iconFillsTile(m_uiPluginManager, name) },
             { QStringLiteral("enabled"), !muted.contains(name) },
         };
     }
@@ -1393,6 +1405,7 @@ QVariantList MainUIBackend::searchApps() const
             { QStringLiteral("name"), name },
             { QStringLiteral("displayName"), display.isEmpty() ? name : display },
             { QStringLiteral("icon"), m_uiPluginManager->pluginIconUrl(name) },
+            { QStringLiteral("supportsFullBleedIcon"), iconFillsTile(m_uiPluginManager, name) },
             { QStringLiteral("enabled"), m_objects->isEnabled(name) },
             { QStringLiteral("count"), m_objects->count(name) },
         };

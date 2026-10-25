@@ -113,6 +113,9 @@ public:
 
     // Who draws each publisher: an icon URL for an app name ("" = none).
     void setIconResolver(std::function<QString(const QString&)> resolver) { m_iconFor = std::move(resolver); }
+    // Whether that icon fills its tile (a 0.4.0+ manifest's validated square)
+    // or is a small glyph drawn inset: stamped as `iconFullBleed`.
+    void setIconFullBleedResolver(std::function<bool(const QString&)> resolver) { m_iconFullBleedFor = std::move(resolver); }
     // Tests replace the clock (ms since epoch) to exercise expiry and the rate
     // window without waiting.
     void setClock(std::function<qint64()> clock) { m_now = std::move(clock); }
@@ -142,6 +145,7 @@ private:
     QSet<QString> m_disabled;
     QHash<QString, std::deque<qint64>> m_recent;   // app -> publish times (ms)
     std::function<QString(const QString&)> m_iconFor;
+    std::function<bool(const QString&)> m_iconFullBleedFor;
     std::function<qint64()> m_now;
     QTimer* m_expiry = nullptr;
 };

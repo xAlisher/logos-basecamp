@@ -4,6 +4,7 @@ import QtQuick.Layouts
 
 import Logos.Controls
 import Logos.Theme
+import Basecamp.Icons
 
 // Settings → Search (SHELL-OBJECTS-SPEC.md §8): every app whose manifest
 // declares `basecamp.objects.publish`, with a switch. Off deletes everything
@@ -81,13 +82,13 @@ Item {
                     anchors.rightMargin: Theme.spacing.medium
                     spacing: Theme.spacing.medium
 
-                    Image {
-                        Layout.preferredWidth: 28
-                        Layout.preferredHeight: 28
+                    BasecampAppTile {
+                        Layout.preferredWidth: size
+                        Layout.preferredHeight: size
+                        size: 28
+                        label: modelData.displayName || modelData.name || ""
                         source: modelData.icon || ""
-                        sourceSize: Qt.size(56, 56)
-                        fillMode: Image.PreserveAspectFit
-                        visible: status === Image.Ready
+                        fullBleed: modelData.supportsFullBleedIcon === true
                     }
                     ColumnLayout {
                         Layout.fillWidth: true

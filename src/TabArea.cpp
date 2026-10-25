@@ -1,5 +1,7 @@
 #include "TabArea.h"
 
+#include "AppTileIcon.h"
+
 #include <QApplication>
 #include <QTimer>
 #include <QLabel>
@@ -47,16 +49,13 @@ QString css(const QColor& c)
     return QStringLiteral("rgba(%1,%2,%3,%4)").arg(c.red()).arg(c.green()).arg(c.blue()).arg(c.alphaF());
 }
 
-QIcon iconFor(const QString& path)
+// No title as well as no icon is the Basecamp tab: the λ. Anything else is an
+// app's tile, rounded like the QML ones (AppTileIcon.h).
+QIcon iconFor(const QString& path, const QString& title = QString())
 {
-    if (path.isEmpty())
+    if (path.isEmpty() && title.isEmpty())
         return QIcon(QStringLiteral(":/qt/qml/Basecamp/Icons/Basecamp/Icons/logos-lambda.svg"));
-    QString p = path;
-    if (p.startsWith(QStringLiteral("file:")))
-        p = QUrl(p).toLocalFile();
-    else if (p.startsWith(QStringLiteral("qrc:")))
-        p = p.mid(3);
-    return QIcon(p);
+    return appTileIcon(path, title, tok("surfaceRaised", "#232323"), tok("text", "#FFFFFF"));
 }
 
 // The empty part of the bar: drag to move the window, double-click to maximise.
@@ -1028,7 +1027,9 @@ void TabArea::updateCompactBar()
     const int i = m_tabs->currentIndex();
     const QString key = i >= 0 ? m_tabs->tabData(i).toString() : QString();
     const bool home = isNewTabKey(key) && !m_switcherOpen;
-    static_cast<OneBarPill*>(m_pill)->set(m_switcherOpen ? QIcon() : iconFor(m_icons.value(key)),
+    const QIcon icon = m_switcherOpen ? QIcon()
+                     : iconFor(m_icons.value(key), isNewTabKey(key) ? QString() : m_titles.value(key));
+    static_cast<OneBarPill*>(m_pill)->set(icon,
                                           m_switcherOpen ? tr("Apps") : m_titles.value(key, key), home);
     if (m_pillSearch->isVisible() != home) {
         m_pillSearch->setVisible(home);
@@ -1104,7 +1105,7 @@ void TabArea::rebuildSwitcher()
             continue;
         if (!query.isEmpty() && !m_titles.value(key, key).contains(query, Qt::CaseInsensitive))
             continue;
-        auto* card = new TabCard(iconFor(newTab ? QString() : m_icons.value(key)),
+        auto* card = new TabCard(newTab ? iconFor(QString()) : iconFor(m_icons.value(key), m_titles.value(key, key)),
                                  newTab ? tr("Basecamp") : m_titles.value(key, key),
                                  i == current, !newTab && m_attention.contains(key), m_switcherGrid);
         card->setObjectName(QStringLiteral("basecampium.tabCard.") + key);
@@ -1229,7 +1230,7 @@ void TabArea::openContent(const QString& key, const QString& title, const QStrin
     if (i < 0)
         i = m_tabs->addTab(QString());
     m_tabs->setTabData(i, key);
-    setLabel(m_tabs, i, iconFor(iconPath), title);
+    setLabel(m_tabs, i, iconFor(iconPath, title), title);
     m_titles[key] = title;
     m_icons[key] = iconPath;
     m_tabs->setTabToolTip(i, title);
@@ -1270,7 +1271,7 @@ void TabArea::detachTab(int index, const QPoint& globalPos)
     onCurrentChanged(m_tabs->currentIndex());
 
     // Owned by this area, so it goes when Basecamp's window goes.
-    auto* win = new DetachedWindow(key, m_titles.value(key, key), iconFor(m_icons.value(key)),
+    auto* win = new DetachedWindow(key, m_titles.value(key, key), iconFor(m_icons.value(key), m_titles.value(key, key)),
                                    content, this, [this, key]() { attachTab(key); });
     const QSize size = window()->size() * 0.7;
     win->resize(size.expandedTo(QSize(720, 480)));
@@ -1297,7 +1298,7 @@ void TabArea::attachTab(const QString& key)
     win->deleteLater();
     const int i = m_tabs->addTab(QString());
     m_tabs->setTabData(i, key);
-    setLabel(m_tabs, i, iconFor(m_icons.value(key)), m_titles.value(key, key));
+    setLabel(m_tabs, i, iconFor(m_icons.value(key), m_titles.value(key, key)), m_titles.value(key, key));
     updateStripWidth();
     m_tabs->setCurrentIndex(i);
     onCurrentChanged(i);

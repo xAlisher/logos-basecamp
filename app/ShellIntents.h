@@ -77,8 +77,8 @@ inline const QString kObjectsActionIntent = QStringLiteral("objects.action");
 // Requesting apps:
 //   sign     { payload, kind, description, algorithm?, purpose? }
 //            answered once the request ends, with signatureResult's map
-//            { requestId, status, signature?, publicKey?, keyId?, signerApp?,
-//            error? }, or at once with { error } (bad_request, busy,
+//            { requestId, status, signature?, publicKey?, keyId?, keyName?,
+//            signerApp?, error? }, or at once with { error } (bad_request, busy,
 //            unavailable). Held open meanwhile: a dispatch the shell is
 //            handling has the broker's 10-minute backstop, above the
 //            Keychain's own 5-minute timeout.

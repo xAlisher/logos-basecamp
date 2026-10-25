@@ -357,6 +357,9 @@ void KeychainBroker::end(const QString& id, State state, const QString& err,
         result.insert(QStringLiteral("signature"), QString::fromLatin1(signature.toBase64()));
         result.insert(QStringLiteral("publicKey"), QString::fromLatin1(key->publicKey.toBase64()));
         result.insert(QStringLiteral("keyId"), r.keyId);
+        // The signer app's name for the key, as the Keychain showed it, so
+        // the requester can say which key signed. Never the user's label.
+        result.insert(QStringLiteral("keyName"), key->name);
         result.insert(QStringLiteral("signerApp"), r.ownerApp);
     }
 

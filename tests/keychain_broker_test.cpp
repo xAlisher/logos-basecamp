@@ -157,6 +157,7 @@ private slots:
         QCOMPARE(r.value("publicKey").toString(), b64(QByteArray(32, 'd')));
         QCOMPARE(r.value("keyId").toString(), QStringLiteral("daily"));
         QCOMPARE(r.value("signerApp").toString(), kSigner);
+        QCOMPARE(r.value("keyName").toString(), QStringLiteral("daily key"));
         QVERIFY(!r.contains("error"));
 
         const QVariantMap s = finished.first().at(1).toMap();
@@ -552,7 +553,7 @@ private slots:
                 QVERIFY2(!dump.contains(marker), marker.constData());
             // Only the documented fields.
             for (const QString& field : args.at(1).toMap().keys())
-                QVERIFY2((QStringList{ "requestId", "status", "error", "signature", "publicKey", "keyId", "signerApp" })
+                QVERIFY2((QStringList{ "requestId", "status", "error", "signature", "publicKey", "keyId", "keyName", "signerApp" })
                              .contains(field), qPrintable(field));
         }
         for (const QList<QVariant>& args : toSigner) {

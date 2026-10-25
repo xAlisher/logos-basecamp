@@ -127,7 +127,8 @@ signals:
     // Ended while `signerApp` had it, by something other than its own answer.
     void requestEnded(const QString& signerApp, const QString& requestId, const QString& status);
     // The answer for the requester: { requestId, status, error? } and, on
-    // done only, { signature, publicKey, keyId, signerApp }.
+    // done only, { signature, publicKey, keyId, keyName, signerApp } (keyName
+    // the signer app's own name for the key, never the user's label).
     void signatureResult(const QString& requester, const QVariantMap& result);
     // The same ending as the shell shows it (the Signed / Not signed sheet):
     // { requestId, status, error?, reason?, signerApp?, signerName?, keyName? }.

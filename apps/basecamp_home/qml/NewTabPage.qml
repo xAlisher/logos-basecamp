@@ -161,14 +161,8 @@ Rectangle {
     // last markSeen. A visit starts when the shell shows a New tab.
     property var newIds: ({})
     property var toMark: []
-    property real visitAt: 0
-    property real lastVisitAt: 0
     property int visit: 0
     property real now: Date.now()
-    // Whether the user could see this visit at all. Home is loaded at start
-    // and keeps running behind other tabs; what arrives then is not seen, and
-    // a visit nobody saw is no "since".
-    property bool visitSeen: false
     // On screen: the shell hides home's view behind other tabs, which hides
     // its window. Nothing is marked seen while it is hidden.
     readonly property bool onScreen: Window.window !== null && Window.window.visibility !== Window.Hidden
@@ -180,12 +174,9 @@ Rectangle {
     }
 
     function startVisit() {
-        if (root.visitSeen) root.lastVisitAt = root.visitAt
-        root.visitAt = Date.now()
-        root.now = root.visitAt
+        root.now = Date.now()
         root.newIds = ({})
         root.toMark = []
-        root.visitSeen = false
         root.visit += 1
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
@@ -195,7 +186,6 @@ Rectangle {
     // Hidden, they are left alone, so the first look still counts them new.
     function noteShown(rows) {
         if (!root.onScreen) return
-        root.visitSeen = true
         const r = M.addUnseen(root.newIds, rows)
         if (r.added.length === 0) return
         root.newIds = r.map
@@ -462,8 +452,8 @@ Rectangle {
             objectName: "home.bar"
             visible: !root.searchInBar
             focus: true
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width, 720)
+            // As wide as the feed cards below, so its edges line up with them.
+            width: parent.width
             height: Theme.components.search.height
             // The bar names what it narrows (§7).
             placeholderText: root.barPlaceholder
@@ -528,10 +518,8 @@ Rectangle {
             id: appsBlock
             objectName: "home.apps"
             visible: root.shownAppHits.length > 0
-            // As wide as the search bar above it, so on a desktop the
-            // buttons stay near the names.
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width, 720)
+            // The content column's width, like the bar and the cards.
+            width: parent.width
 
             Item {
                 width: parent.width
@@ -677,7 +665,6 @@ Rectangle {
             total: root.feedTotal
             now: root.now
             newIds: root.newIds
-            since: root.lastVisitAt
             onRaiseRequested: (id, action, text) => root.raise(id, action, text)
             onShownChanged: root.noteShown(root.feedRows.slice(0, feed.shown))
         }

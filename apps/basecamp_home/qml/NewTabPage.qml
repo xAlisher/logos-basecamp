@@ -28,9 +28,9 @@ import "BasecampHomeModules.js" as M
 // card's actions go to the app that published it. It reads only `shell`, the
 // role-gated object the host injects.
 //
-// The modules (order, size, pin, notify, the custom ones) live in memory
-// only: home has no settings store of its own yet, so a restart brings back
-// the defaults.
+// The modules (order, size, pin, notify, the custom ones) and their layout
+// on the grid live in memory only: home has no settings store of its own
+// yet, so a restart brings back the defaults.
 Rectangle {
     id: root
 
@@ -384,7 +384,10 @@ Rectangle {
     property string chosenView: "feed"
     readonly property string view: root.feedOnly ? "feed" : root.chosenView
     property var modules: M.defaultModules().map(M.sanitizeModule)
-    readonly property var shownModules: M.ordered(root.modules)
+    // The modules' places on the grid, one layout per column count it was
+    // arranged at ({ "<columns>": layout }); none yet derives them from the
+    // modules' old size and pin (M.layoutFor).
+    property var layouts: ({})
 
     // One live result for whether anything matches: the bar's text, no filter.
     property var allResults: null
@@ -847,50 +850,74 @@ Rectangle {
             font.pixelSize: Theme.typography.secondaryText
         }
 
-        // ── modules ─────────────────────────────────────────────────────
+        // ── modules (basecamp-experiments#50) ─────────────────────────────
+        // A grid of cells that scrolls with the page: columns by the grid's
+        // width (M.columnsFor), rows kRowHeight tall; each module covers the
+        // cells of its block in the layout for that column count
+        // (M.layoutFor). A width change only switches layouts, it saves none.
+        // Wider than the page's column on a big screen, so four columns fit.
         Item {
             id: grid
             objectName: "home.grid"
             visible: root.view === "grid" && root.allRows.length > 0
-            width: parent.width
+            width: Math.min(root.width - 2 * root.sideMargin, 1600)
+            x: (parent.width - width) / 2
             height: visible ? gridHeight : 0
             readonly property int gap: Theme.spacing.medium
-            readonly property int columns: M.columnsFor(width, 340, gap, 3)
+            readonly property int rowHeight: M.kRowHeight
+            readonly property int columns: M.columnsFor(width)
             readonly property real columnWidth: (width - (columns - 1) * gap) / columns
-            property real gridHeight: 0
-            property int shownCount: 0
+            // Edit mode (#51): every module keeps its cells, the empty ones too.
+            property bool editing: false
+            readonly property var layout: M.layoutFor(root.layouts, grid.columns, root.modules)
+            // The modules that find nothing: outside edit mode they give up
+            // their cells, as a hidden module took no room before.
+            property var hiddenIds: []
+            readonly property var visibleLayout: M.withoutHidden(grid.layout, grid.hiddenIds)
+            readonly property var shown: grid.editing ? grid.layout : grid.visibleLayout
+            readonly property int shownCount: grid.visibleLayout.blocks.length
+            readonly property real gridHeight: {
+                const rows = M.rowsOf(grid.shown)
+                return rows > 0 ? rows * (grid.rowHeight + grid.gap) - grid.gap : 0
+            }
 
-            // Each visible module goes where its columns are lowest so far
-            // (M.layout); a hidden one (nothing found) takes no room.
-            function relayout() {
-                const index = [], spans = [], heights = []
+            function noteHidden() {
+                const ids = []
                 for (let i = 0; i < moduleRepeater.count; ++i) {
                     const it = moduleRepeater.itemAt(i)
-                    if (!it || !it.visible) continue
-                    index.push(i)
-                    spans.push(M.spanFor(it.size, grid.columns))
-                    heights.push(it.implicitHeight)
+                    if (it && !it.hasContent) ids.push(it.module.id)
                 }
-                const placed = M.layout(spans, heights, grid.columns, grid.gap)
-                for (let k = 0; k < index.length; ++k) {
-                    const it = moduleRepeater.itemAt(index[k])
-                    it.x = placed.items[k].col * (grid.columnWidth + grid.gap)
-                    it.y = placed.items[k].y
-                }
-                grid.gridHeight = placed.height
-                grid.shownCount = index.length
+                if (ids.join("\n") !== grid.hiddenIds.join("\n")) grid.hiddenIds = ids
             }
-            onColumnsChanged: Qt.callLater(relayout)
-            onWidthChanged: Qt.callLater(relayout)
+
+            // Moves are animated so a reflow reads, but not on first show
+            // and not while the window is being resized.
+            property bool animate: false
+            function still() { grid.animate = false; animateTimer.restart() }
+            onVisibleChanged: grid.still()
+            onWidthChanged: grid.still()
+            Timer {
+                id: animateTimer
+                interval: 300
+                onTriggered: grid.animate = grid.visible
+            }
 
             Repeater {
                 id: moduleRepeater
-                model: root.shownModules
+                model: root.modules
                 delegate: BasecampHomeModule {
+                    id: cardItem
                     required property var modelData
+                    readonly property var block: M.blockFor(grid.shown, modelData.id)
                     module: modelData
-                    width: M.spanFor(modelData.size, grid.columns) * grid.columnWidth
-                           + (M.spanFor(modelData.size, grid.columns) - 1) * grid.gap
+                    x: block ? block.x * (grid.columnWidth + grid.gap) : 0
+                    y: block ? block.y * (grid.rowHeight + grid.gap) : 0
+                    width: block ? block.w * grid.columnWidth + (block.w - 1) * grid.gap : grid.columnWidth
+                    height: block ? block.h * grid.rowHeight + (block.h - 1) * grid.gap : 0
+                    Behavior on x { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on y { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on width { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on height { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     barQuery: root.rawQuery
                     pill: root.pill
                     // Searching only while the modules show (#27).
@@ -899,15 +926,14 @@ Rectangle {
                     now: root.now
                     newIds: root.newIds
                     visit: root.visit
-                    onImplicitHeightChanged: Qt.callLater(grid.relayout)
-                    onVisibleChanged: Qt.callLater(grid.relayout)
+                    onHasContentChanged: Qt.callLater(grid.noteHidden)
                     onRowsShown: rows => { if (root.view === "grid") root.noteShown(rows) }
                     onRaiseRequested: (id, action, text) => root.raise(id, action, text)
                     onChangeRequested: change => root.modules = M.updateModule(root.modules, modelData.id, change)
                     onRemoveRequested: root.modules = M.removeModule(root.modules, modelData.id)
                 }
-                onItemAdded: Qt.callLater(grid.relayout)
-                onItemRemoved: Qt.callLater(grid.relayout)
+                onItemAdded: Qt.callLater(grid.noteHidden)
+                onItemRemoved: Qt.callLater(grid.noteHidden)
             }
         }
 

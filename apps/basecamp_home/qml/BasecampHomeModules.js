@@ -412,9 +412,10 @@ function fitTo(layout, columns) {
 
 // The first layout, from the size and pin modules had before the grid:
 // pinned first, then the saved order; small, medium and large are 2, 3 and 4
-// rows, large two columns wide, a row the whole width.
+// rows, large two columns wide; a row (one sideways strip of cards) is the
+// whole width and 2 rows.
 function migrateLayout(modules, columns) {
-    var kHeights = { small: 2, medium: 3, large: 4, row: 3 }
+    var kHeights = { small: 2, medium: 3, large: 4, row: 2 }
     var blocks = ordered(modules).map(function (m) {
         return {
             id: m.id,
@@ -463,11 +464,14 @@ function layoutFor(saved, columns, modules) {
     return compact({ columns: columns, blocks: base.blocks.concat(flow(added, columns, base.blocks)) })
 }
 
-// What shows outside edit mode: the cards with nothing to show give up their
-// cells and the rest move up into them.
+// What shows outside edit mode: the cards with nothing to show (a pill or
+// the bar's text leaves them empty) give up their cells, and the rest close
+// up in reading order (fitTo), so one card left is not stranded at the
+// right. With none hidden, the layout as it is.
 function withoutHidden(layout, hiddenIds) {
-    return compact({ columns: layout.columns,
-                     blocks: layout.blocks.filter(function (b) { return hiddenIds.indexOf(b.id) < 0 }) })
+    var shown = layout.blocks.filter(function (b) { return hiddenIds.indexOf(b.id) < 0 })
+    if (shown.length === layout.blocks.length) return layout
+    return fitTo({ columns: layout.columns, blocks: shown }, layout.columns)
 }
 
 // How many rows the layout takes.
@@ -483,38 +487,6 @@ function blockFor(layout, id) {
     for (var i = 0; i < layout.blocks.length; ++i)
         if (layout.blocks[i].id === id) return layout.blocks[i]
     return null
-}
-
-// ── masonry (until the cell grid renders) ───────────────────────────────
-
-// How many columns a module of `size` takes.
-function spanFor(size, columns) {
-    if (size === "row") return columns
-    if (size === "large") return Math.min(2, columns)
-    return 1
-}
-
-// Places modules in columns, each where its columns are lowest so far, in
-// order. spans and heights are per module. Returns { items: [{ col, y }],
-// height }.
-function layout(spans, heights, columns, gap) {
-    var cols = []
-    for (var c = 0; c < columns; ++c) cols.push(0)
-    var items = []
-    for (var i = 0; i < spans.length; ++i) {
-        var span = Math.max(1, Math.min(columns, spans[i]))
-        var best = 0, bestY = Infinity
-        for (var s = 0; s + span <= columns; ++s) {
-            var y = 0
-            for (var k = s; k < s + span; ++k) y = Math.max(y, cols[k])
-            if (y < bestY) { bestY = y; best = s }
-        }
-        items.push({ col: best, y: bestY })
-        for (var k2 = best; k2 < best + span; ++k2) cols[k2] = bestY + heights[i] + gap
-    }
-    var height = 0
-    for (var c2 = 0; c2 < columns; ++c2) height = Math.max(height, cols[c2])
-    return { items: items, height: Math.max(0, height - (items.length > 0 ? gap : 0)) }
 }
 
 // ── keyboard (basecamp-experiments#48) ──────────────────────────────────

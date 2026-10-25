@@ -11,7 +11,8 @@ import "BasecampHomeModules.js" as M
 // One home module (SHELL-OBJECTS-SPEC §7): a saved filter and the objects it
 // finds, drawn as one-line rows (small), cards (medium, large) or a sideways
 // strip of cards (row). Its own live results from `shell.search`, narrowed by
-// the bar's text and the pill; hidden while it finds nothing.
+// the bar's text and the pill; hidden while it finds nothing. Home's grid
+// gives it its place and size (its block of cells).
 //
 // (File names here start with BasecampHome: two ui_qml apps shipping a file
 // of the same name collide, spec §11.)
@@ -53,8 +54,13 @@ Rectangle {
     readonly property int newCount: M.newCount(mod.rows, mod.newIds)
 
     objectName: "home.module." + mod.module.name
-    visible: mod.filter !== null && mod.rows.length > 0
+    // Something to show; home's grid takes the cells of one without
+    // (basecamp-experiments#50).
+    readonly property bool hasContent: mod.filter !== null && mod.rows.length > 0
+    visible: mod.hasContent
     implicitHeight: visible ? content.implicitHeight + 2 * Theme.spacing.medium : 0
+    // Home's grid sizes it by its block; what does not fit stays inside.
+    clip: true
     radius: Theme.spacing.radiusXlarge
     color: Theme.palette.backgroundElevated
     border.width: 1

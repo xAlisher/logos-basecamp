@@ -220,6 +220,20 @@ private slots:
         QVERIFY(!m_broker->cancelByUser(id));   // once
     }
 
+    void keychainSeesWhoSignsOnceChosen()
+    {
+        const QString id = open();
+        QVariantMap view = m_broker->requestForKeychain(id);
+        QVERIFY(!view.contains("signerApp"));
+        QVERIFY(!view.contains("signerName"));
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        view = m_broker->requestForKeychain(id);
+        QCOMPARE(view.value("state").toString(), QStringLiteral("keyChosen"));
+        QCOMPARE(view.value("signerApp").toString(), kSigner);
+        QCOMPARE(view.value("signerName").toString(), QStringLiteral("Stub Signer"));
+        QCOMPARE(view.value("chosenKeyId").toString(), QStringLiteral("daily"));
+    }
+
     void cancelledByRequester()
     {
         QSignalSpy results(m_broker, &KeychainBroker::signatureResult);

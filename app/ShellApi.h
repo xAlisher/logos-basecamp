@@ -86,7 +86,8 @@ class ShellApi : public QObject {
 
     // ── keychain (basecamp-experiments#55, #56) ──────────────────────────
     // Every registered key, the user's label and note included, grouped by
-    // owner (Keychain::allKeys rows plus ownerIcon, served by the host).
+    // owner (Keychain::allKeys rows plus ownerIcon and ownerFullBleed, served
+    // by the host).
     Q_PROPERTY(QVariantList keychainKeys READ keychainKeys NOTIFY keychainChanged)
     // Open signing requests' ids, oldest first.
     Q_PROPERTY(QStringList keychainRequests READ keychainRequests NOTIFY keychainRequestsChanged)

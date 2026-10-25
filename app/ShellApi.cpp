@@ -1,6 +1,7 @@
 #include "ShellApi.h"
 
 #include "AppSearch.h"
+#include "AppsModel.h"
 #include "IntentRegistry.h"
 #include "Keychain.h"
 #include "KeychainBroker.h"
@@ -604,14 +605,29 @@ void ShellApi::setBarPlaceholder(const QString& text)
 // the shell also turns the New tab into whatever opens.
 // ── keychain ─────────────────────────────────────────────────────────────────
 
+namespace {
+
+// The tile an app's icon is drawn on, as home's app rows: the host's icon
+// for it, full bleed for a 0.4.0+ package (AppsModel::supportsFullBleedIcon).
+void addAppTile(MainUIBackend* backend, QVariantMap& row, const QString& app,
+                const QString& iconKey, const QString& fullBleedKey)
+{
+    row.insert(iconKey, QStringLiteral("image://basecamp/appicon/") + app);
+    UIPluginManager* plugins = backend->uiPluginManager();
+    row.insert(fullBleedKey,
+               plugins && AppsModel::supportsFullBleedIcon(plugins->pluginManifestVersion(app)));
+}
+
+} // namespace
+
 QVariantList ShellApi::keychainKeys() const
 {
     if (!holds("keychain") || !m_backend->keychain()) return {};
     QVariantList rows = m_backend->keychain()->allKeys();
     for (QVariant& v : rows) {
         QVariantMap row = v.toMap();
-        row.insert(QStringLiteral("ownerIcon"),
-                   QStringLiteral("image://basecamp/appicon/") + row.value(QStringLiteral("ownerApp")).toString());
+        addAppTile(m_backend, row, row.value(QStringLiteral("ownerApp")).toString(),
+                   QStringLiteral("ownerIcon"), QStringLiteral("ownerFullBleed"));
         v = row;
     }
     return rows;
@@ -646,13 +662,13 @@ QVariantMap ShellApi::keychainRequest(const QString& requestId) const
     if (!holds("keychain") || !m_backend->keychainBroker()) return {};
     QVariantMap r = m_backend->keychainBroker()->requestForKeychain(requestId);
     if (r.isEmpty()) return r;
-    r.insert(QStringLiteral("requesterIcon"),
-             QStringLiteral("image://basecamp/appicon/") + r.value(QStringLiteral("requesterApp")).toString());
+    addAppTile(m_backend, r, r.value(QStringLiteral("requesterApp")).toString(),
+               QStringLiteral("requesterIcon"), QStringLiteral("requesterFullBleed"));
     QVariantList keys = r.value(QStringLiteral("keys")).toList();
     for (QVariant& v : keys) {
         QVariantMap row = v.toMap();
-        row.insert(QStringLiteral("ownerIcon"),
-                   QStringLiteral("image://basecamp/appicon/") + row.value(QStringLiteral("ownerApp")).toString());
+        addAppTile(m_backend, row, row.value(QStringLiteral("ownerApp")).toString(),
+                   QStringLiteral("ownerIcon"), QStringLiteral("ownerFullBleed"));
         v = row;
     }
     r.insert(QStringLiteral("keys"), keys);

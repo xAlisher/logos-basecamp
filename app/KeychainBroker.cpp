@@ -173,7 +173,7 @@ QVariantMap KeychainBroker::requestForKeychain(const QString& requestId) const
     const auto lastIt = m_lastKey.constFind(it->requester);
     if (lastIt != m_lastKey.cend() && matches(*it, lastIt->first, lastIt->second))
         last = { { QStringLiteral("ownerApp"), lastIt->first }, { QStringLiteral("keyId"), lastIt->second } };
-    return {
+    QVariantMap r{
         { QStringLiteral("requestId"), it->id },
         { QStringLiteral("state"), stateName(it->state) },
         { QStringLiteral("requesterApp"), it->requester },
@@ -185,6 +185,14 @@ QVariantMap KeychainBroker::requestForKeychain(const QString& requestId) const
         { QStringLiteral("keys"), keys },
         { QStringLiteral("lastKey"), last },
     };
+    // Once chosen: whose app is signing, for "Waiting for …".
+    if (!it->ownerApp.isEmpty()) {
+        const Keychain::Key* k = m_keys ? m_keys->find(it->ownerApp, it->keyId) : nullptr;
+        r.insert(QStringLiteral("signerApp"), it->ownerApp);
+        r.insert(QStringLiteral("signerName"), k ? k->ownerName : it->ownerApp);
+        r.insert(QStringLiteral("chosenKeyId"), it->keyId);
+    }
+    return r;
 }
 
 bool KeychainBroker::chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId)

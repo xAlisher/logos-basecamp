@@ -83,7 +83,8 @@ public:
     QStringList openRequests() const;
     // What the Keychain shows: { requestId, state, requesterApp, requesterName,
     // description, kind, algorithm, purpose, keys: [ … ], lastKey }, keys the
-    // registry's allKeys() rows that can sign this request. {} when unknown.
+    // registry's allKeys() rows that can sign this request; once a key is
+    // chosen also { signerApp, signerName, chosenKeyId }. {} when unknown.
     QVariantMap requestForKeychain(const QString& requestId) const;
     // pending → keyChosen; then signerRequested asks the shell to hand it on.
     bool chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId);

@@ -84,10 +84,12 @@ class ShellApi : public QObject {
     // another home app starts from nothing.
     Q_PROPERTY(QVariantMap homeSettings READ homeSettings NOTIFY homeSettingsChanged)
 
-    // ── keychain (basecamp-experiments#55) ───────────────────────────────
+    // ── keychain (basecamp-experiments#55, #56) ──────────────────────────
     // Every registered key, the user's label and note included, grouped by
     // owner (Keychain::allKeys rows plus ownerIcon, served by the host).
     Q_PROPERTY(QVariantList keychainKeys READ keychainKeys NOTIFY keychainChanged)
+    // Open signing requests' ids, oldest first.
+    Q_PROPERTY(QStringList keychainRequests READ keychainRequests NOTIFY keychainRequestsChanged)
 
 public:
     ShellApi(MainUIBackend* backend, const QString& appName, QObject* parent = nullptr);
@@ -130,6 +132,7 @@ public:
     QVariantList recentApps() const;
     QVariantMap homeSettings() const;
     QVariantList keychainKeys() const;
+    QStringList keychainRequests() const;
 
     // settings
     Q_INVOKABLE void refreshRepositories();
@@ -223,6 +226,13 @@ public:
     Q_INVOKABLE bool setKeyNote(const QString& ownerApp, const QString& keyId, const QString& note);
     // The entry leaves the directory; the signer app keeps its private key.
     Q_INVOKABLE bool removeKey(const QString& ownerApp, const QString& keyId);
+    // One open request as the Keychain shows it (KeychainBroker::
+    // requestForKeychain): who asks, their words, the kind, the keys that can
+    // sign it and the one this requester used last. {} when unknown.
+    Q_INVOKABLE QVariantMap keychainRequest(const QString& requestId) const;
+    // Continue with this key (it goes to its signer app), or Cancel.
+    Q_INVOKABLE bool chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId);
+    Q_INVOKABLE bool cancelSignatureRequest(const QString& requestId);
 
     // any role app: open whatever fills another role (navigation only).
     Q_INVOKABLE bool openRole(const QString& role);
@@ -258,6 +268,9 @@ signals:
     void objectsChanged(const QString& app);
     // keychain: a key was registered, changed or removed.
     void keychainChanged();
+    void keychainRequestsChanged();
+    // keychain: a signing request is waiting for the user.
+    void keychainRequestOpened(const QString& requestId);
 
 private:
     bool holds(const char* role) const;

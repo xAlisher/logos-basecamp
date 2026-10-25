@@ -33,6 +33,7 @@ private slots:
     void testAppsCannotClaimTheNewNavigationIntents();
     void testObjectsActionIsRequestableByTheShellAlone();
     void testKeychainIntentsAreTheShellsAndNotNavigation();
+    void testKeychainSignerIntentsAreRequestableByTheShellAlone();
 
 private:
     static IntentRegistry* freshRegistry(QObject* parent)
@@ -263,7 +264,7 @@ void TestShellIntents::testObjectsActionIsRequestableByTheShellAlone()
 
 void TestShellIntents::testKeychainIntentsAreTheShellsAndNotNavigation()
 {
-    // Answered in C++ with the attested caller (basecamp-experiments#55).
+    // Answered in C++ with the attested caller (basecamp-experiments#55, #56).
     // None of them may skip the consent a navigation intent skips, and no web
     // page may reach one.
     QObject owner;
@@ -277,6 +278,33 @@ void TestShellIntents::testKeychainIntentsAreTheShellsAndNotNavigation()
         QVERIFY2(!ShellIntents::kNavigationIntents.contains(intent), qPrintable(intent));
         QVERIFY2(!ShellIntents::kWebReachableIntents.contains(intent), qPrintable(intent));
         QVERIFY2(!registry->isHandoff(QStringLiteral("main_ui"), intent), qPrintable(intent));
+    }
+}
+
+void TestShellIntents::testKeychainSignerIntentsAreRequestableByTheShellAlone()
+{
+    // A signer hears `keychain.sign` and `keychain.ended` from the shell and
+    // from nobody else, even an app that declares it uses them.
+    QTemporaryDir root;
+    const QString dir = root.filePath(QStringLiteral("forger"));
+    QVERIFY(QDir().mkpath(dir));
+    QFile meta(QDir(dir).filePath(QStringLiteral("metadata.json")));
+    QVERIFY(meta.open(QIODevice::WriteOnly));
+    meta.write(R"({"uses":[{"intent":"keychain.sign"},{"intent":"keychain.ended"}]})");
+    meta.close();
+
+    QObject owner;
+    IntentRegistry* registry = freshRegistry(&owner);
+    registry->rebuild({ { QStringLiteral("forger_ui"),
+                          QVariantMap{ { QStringLiteral("installDir"), dir },
+                                       { QStringLiteral("type"),
+                                         QStringLiteral("ui_qml") } } } },
+                      nullptr, nullptr);
+    for (const QString& intent : { ShellIntents::kKeychainSignerIntent, ShellIntents::kKeychainEndedIntent }) {
+        QVERIFY(registry->declaresUse(QStringLiteral("forger_ui"), intent));
+        QVERIFY(!registry->requesterAllowed(intent, QStringLiteral("forger_ui")));
+        QVERIFY(registry->requesterAllowed(intent, QStringLiteral("main_ui")));
+        QVERIFY(!registry->requesterAllowed(intent, QString()));
     }
 }
 

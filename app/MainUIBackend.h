@@ -16,6 +16,7 @@
 class ObjectResults;
 class ObjectSearch;
 class Keychain;
+class KeychainBroker;
 #include <QHash>
 #include <QSet>
 #include <QVariantList>
@@ -240,9 +241,10 @@ public:
     //   shellSearch    the shell's own live results (one model, refilled on
     //                  each call), ranked by the holder like any view's.
     ObjectSearch* objectSearch() const { return m_objectSearch; }
-    // Keychain (basecamp-experiments#55): the public-key directory, for
-    // ShellApi's keychain-role members.
+    // Keychain (basecamp-experiments#55, #56): the public-key directory and
+    // the signing request broker, for ShellApi's keychain-role members.
     Keychain* keychain() const { return m_keychain; }
+    KeychainBroker* keychainBroker() const { return m_keychainBroker; }
     Q_INVOKABLE QStringList searchObjects(const QString& query,
                                           const QVariantMap& filter = QVariantMap()) const;
     Q_INVOKABLE QObject* shellSearch(const QString& query,
@@ -454,6 +456,9 @@ signals:
     void lastSearchRankerChanged();
     // The publisher answered an action raised with raiseObjectAction().
     void objectActionAnswered(const QString& requestId, bool ok, const QString& error);
+    // A signing request ended (KeychainBroker::requestFinished): what the
+    // shell's Signed / Not signed sheet over `requester` says.
+    void keychainRequestFinished(const QString& requester, const QVariantMap& summary);
     void rolesChanged();
     void shellPreferencesChanged();
     void settingsSectionRequested(const QString& section);
@@ -693,6 +698,9 @@ private:
     class QTimer*             m_searchAppsTimer = nullptr;
     class ObjectSearch*       m_objectSearch = nullptr;
     Keychain*                 m_keychain = nullptr;
+    KeychainBroker*           m_keychainBroker = nullptr;
+    // A requester's open basecamp.keychain.sign dispatch, by Keychain request id.
+    QHash<QString, QString>   m_keychainDispatches;
     // Reported uninstalled; their keys go once the metadata agrees.
     QSet<QString>             m_keychainUninstalled;
     QPointer<ObjectResults> m_shellResults;

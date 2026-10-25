@@ -36,6 +36,8 @@
 #include "HomeSettingsStore.h"
 #include "InstallRegistry.h"
 #include "Keychain.h"
+#include "KeychainBroker.h"
+#include "KeychainVerify.h"
 #include "utils/LogosBasecampPaths.h"
 
 #include <QDebug>
@@ -608,7 +610,8 @@ void MainUIBackend::wireIntents()
             }
 
             // Keychain: the same shape, the requester again the attested
-            // caller, the owner of the keys it registers.
+            // caller (owner of the keys it registers, the app asking for a
+            // signature, the signer answering one).
             if (kKeychainIntents.contains(intent))
                 return beginKeychainIntent(dispatchId, intent, params, requesterName);
 
@@ -627,6 +630,17 @@ void MainUIBackend::wireIntents()
         // Answers to what the shell itself asked. Only object actions are
         // listened for; the package hand-offs are fire and forget.
         [this](const QString& requestId, const QVariantMap& envelope) {
+            // The signer's answer to keychain.sign: it is showing the
+            // request (ok), or could not be reached. keychain.ended needs
+            // no answer.
+            if (requestId.startsWith(QStringLiteral("shell-keychain-sign-")) && m_keychainBroker) {
+                const QString id = requestId.mid(int(qstrlen("shell-keychain-sign-")));
+                if (envelope.value(QStringLiteral("ok")).toBool())
+                    m_keychainBroker->signerReached(id);
+                else
+                    m_keychainBroker->signerUnreachable(id);
+                return;
+            }
             if (!requestId.startsWith(QStringLiteral("shell-object-")))
                 return;
             const bool ok = envelope.value(QStringLiteral("ok")).toBool();
@@ -1520,7 +1534,7 @@ QString MainUIBackend::raiseObjectAction(const QString& id, const QString& actio
     return requestId;
 }
 
-// ── Keychain (basecamp-experiments#55) ──────────────────────────────────────
+// ── Keychain (basecamp-experiments#55, #56) ─────────────────────────────────
 
 void MainUIBackend::wireKeychain()
 {
@@ -1534,6 +1548,63 @@ void MainUIBackend::wireKeychain()
             : QString();
     });
     m_keychain->setNameResolver([this](const QString& app) { return displayNameFor(app); });
+
+    m_keychainBroker = new KeychainBroker(m_keychain, this);
+    m_keychainBroker->setVerifier(&KeychainVerify::verify);
+    m_keychainBroker->setNameResolver([this](const QString& app) { return displayNameFor(app); });
+    m_keychainBroker->setKeychainAvailable([this]() { return !roleHolder(kKeychainRole).isEmpty(); });
+
+    // A request needs the user: bring the Keychain app forward. What it shows
+    // it reads through `shell` (ShellApi), which only its holder may.
+    connect(m_keychainBroker, &KeychainBroker::requestOpened, this, [this](const QString&) {
+        openRole(kKeychainRole);
+    });
+
+    // The chosen key's owner, and nobody else: submitTo names it, and the
+    // registry lets only the shell ask keychain.sign at all (ShellIntents).
+    connect(m_keychainBroker, &KeychainBroker::signerRequested, this,
+            [this](const QString& signer, const QVariantMap& envelope) {
+                const QString id = envelope.value(QStringLiteral("requestId")).toString();
+                if (!m_intentRegistry || !m_intentRegistry->declaresProvide(signer, kKeychainSignerIntent)) {
+                    qWarning().noquote() << "Keychain:" << signer << "does not provide"
+                                         << kKeychainSignerIntent;
+                    m_keychainBroker->signerUnreachable(id);
+                    return;
+                }
+                m_intentBroker->submitTo(m_shellEndpoint.get(), QStringLiteral("shell-keychain-sign-") + id,
+                                         kKeychainSignerIntent, envelope, signer, /*present=*/true);
+            });
+
+    // Told only while it runs: telling a closed signer would start it again.
+    connect(m_keychainBroker, &KeychainBroker::requestEnded, this,
+            [this](const QString& signer, const QString& id, const QString& status) {
+                if (!m_uiPluginManager || !m_uiPluginManager->isUiAppLoaded(signer)) return;
+                if (!m_intentRegistry->declaresProvide(signer, kKeychainEndedIntent)) return;
+                m_intentBroker->submitTo(m_shellEndpoint.get(), QStringLiteral("shell-keychain-ended-") + id,
+                                         kKeychainEndedIntent,
+                                         QVariantMap{ { QStringLiteral("requestId"), id },
+                                                      { QStringLiteral("status"), status } },
+                                         signer, /*present=*/false);
+            });
+
+    // The answer to the requester's held-open sign request.
+    connect(m_keychainBroker, &KeychainBroker::signatureResult, this,
+            [this](const QString&, const QVariantMap& result) {
+                const QString dispatchId =
+                    m_keychainDispatches.take(result.value(QStringLiteral("requestId")).toString());
+                if (!dispatchId.isEmpty())
+                    respondToShellIntent(dispatchId, true, result, QString());
+            });
+    connect(m_keychainBroker, &KeychainBroker::requestFinished,
+            this, &MainUIBackend::keychainRequestFinished);
+
+    // A requester closed mid-request is cancelled; a signer closed while it
+    // held one fails it.
+    connect(m_uiPluginManager, &UIPluginManager::uiModulesChanged, this, [this]() {
+        for (const QString& app : m_keychainBroker->appsInvolved())
+            if (!m_uiPluginManager->isUiAppLoaded(app))
+                m_keychainBroker->appClosed(app);
+    });
 
     // Uninstalled: its keys leave the directory, label and note with them.
     // package_manager reports an upgrade as an uninstall too, so the keys go
@@ -1557,7 +1628,7 @@ int MainUIBackend::beginKeychainIntent(const QString& dispatchId, const QString&
                                        const QVariantMap& params, const QString& requester)
 {
     // Answered a turn later, like notifications, so the broker has finished
-    // dispatching first. Never logged.
+    // dispatching first. Never logged: the params carry payloads and keys.
     const auto answer = [this, dispatchId](const QVariantMap& data) {
         QTimer::singleShot(0, this, [this, dispatchId, data]() {
             respondToShellIntent(dispatchId, true, data, QString());
@@ -1565,6 +1636,7 @@ int MainUIBackend::beginKeychainIntent(const QString& dispatchId, const QString&
         return 1;
     };
     const QString keyId = params.value(QStringLiteral("keyId")).toString();
+    const QString requestId = params.value(QStringLiteral("requestId")).toString();
 
     if (intent == kKeychainRegisterIntent)
         return answer(m_keychain->registerKey(requester, params));
@@ -1577,5 +1649,26 @@ int MainUIBackend::beginKeychainIntent(const QString& dispatchId, const QString&
         return answer(m_keychain->removeKey(requester, keyId));
     if (intent == kKeychainKeysIntent)
         return answer({ { QStringLiteral("keys"), m_keychain->myKeys(requester) } });
+    if (intent == kKeychainSignIntent) {
+        const QVariantMap r = m_keychainBroker->requestSignature(requester, params);
+        const QString id = r.value(QStringLiteral("requestId")).toString();
+        if (id.isEmpty())
+            return answer(r);
+        // Held open: signatureResult answers it when the request ends.
+        m_keychainDispatches.insert(id, dispatchId);
+        return 1;
+    }
+    if (intent == kKeychainCancelIntent)
+        return answer({ { QStringLiteral("ok"), m_keychainBroker->cancelByRequester(requester, requestId) } });
+    if (intent == kKeychainCompleteIntent) {
+        const QString status = m_keychainBroker->completeSignature(
+            requester, requestId, params.value(QStringLiteral("signature")).toString());
+        QVariantMap data{ { QStringLiteral("ok"), !status.isEmpty() } };
+        if (!status.isEmpty()) data.insert(QStringLiteral("status"), status);
+        return answer(data);
+    }
+    if (intent == kKeychainRejectIntent)
+        return answer({ { QStringLiteral("ok"), m_keychainBroker->rejectSignature(
+                              requester, requestId, params.value(QStringLiteral("reason")).toString()) } });
     return 0;
 }

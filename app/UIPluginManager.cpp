@@ -1454,9 +1454,9 @@ QString UIPluginManager::pluginIconUrl(const QString& pluginName, bool forWidget
     // on a transparent square. It is one of the three system apps, so Basecamp
     // draws it with the system look Applications and Settings ship: a square
     // on the shared background, rounded by the tile (basecamp-experiments#40).
-    static const QString kSystemPackagesIcon = QStringLiteral(":/icons/system/package_manager.svg");
-    if (pluginName == QLatin1String("package_manager_ui") && QFile::exists(kSystemPackagesIcon))
-        return forWidgetIcon ? kSystemPackagesIcon : QStringLiteral("qrc") + kSystemPackagesIcon;
+    const QString systemIcon = systemIconUrl(pluginName);
+    if (!systemIcon.isEmpty())
+        return forWidgetIcon ? systemIcon.mid(3) : systemIcon;
 
     const QVariantMap& meta = m_uiPluginMetadata[pluginName];
     QString iconPath = meta.value("icon").toString();
@@ -1487,6 +1487,14 @@ QString UIPluginManager::pluginIconUrl(const QString& pluginName, bool forWidget
     const qint64 mtimeMs = QFileInfo(filePath).lastModified().toMSecsSinceEpoch();
     return QUrl::fromLocalFile(filePath).toString()
          + QStringLiteral("?v=") + QString::number(mtimeMs);
+}
+
+QString UIPluginManager::systemIconUrl(const QString& pluginName)
+{
+    static const QString kSystemPackagesIcon = QStringLiteral(":/icons/system/package_manager.svg");
+    if (pluginName == QLatin1String("package_manager_ui") && QFile::exists(kSystemPackagesIcon))
+        return QStringLiteral("qrc") + kSystemPackagesIcon;
+    return QString();
 }
 
 QString UIPluginManager::pluginManifestVersion(const QString& pluginName) const

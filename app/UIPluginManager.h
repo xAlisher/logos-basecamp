@@ -132,6 +132,10 @@ public:
     //   forWidgetIcon=true  → raw "qrc:…" path (for QWidget::setWindowIcon)
     QString pluginIconUrl(const QString& moduleName, bool forWidgetIcon = false) const;
 
+    // The host's own icon drawn for a system app in place of its package's
+    // ("qrc:/…"), or empty. Only the Package Manager has one.
+    static QString systemIconUrl(const QString& moduleName);
+
     // Manifest schema version of an installed UI plugin. Feeds the full-bleed
     // icon gate on both the sidebar and App Manager paths.
     QString pluginManifestVersion(const QString& moduleName) const;

@@ -41,10 +41,13 @@ bool holdsAnyRole(MainUIBackend* backend, const QString& app)
 QString iconSourceFor(MainUIBackend* backend, const QString& name)
 {
     if (UIPluginManager* plugins = backend->uiPluginManager()) {
-        // A qrc: icon counts only when the host itself has it (the system
-        // Package Manager icon); a plugin's own resource isn't loaded here.
+        // A qrc: icon counts only when it is the host's own system icon for
+        // this app (the Package Manager's). Any other qrc: path is a plugin's
+        // resource, not loaded here, and must not pass as a host icon.
         const QString installed = plugins->pluginIconUrl(name);
+        const bool qrc = installed.startsWith(QStringLiteral("qrc:"));
         if (!installed.isEmpty()
+            && (!qrc || installed == UIPluginManager::systemIconUrl(name))
             && QFileInfo::exists(localPathFor(QUrl(installed).adjusted(QUrl::RemoveQuery).toString())))
             return QUrl(installed).adjusted(QUrl::RemoveQuery).toString();
     }

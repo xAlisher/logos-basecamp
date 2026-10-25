@@ -914,6 +914,13 @@ void MainContainer::positionDock()
     m_dockWidget->move((width() - m_dockWidget->width()) / 2,
                        height() - m_dockWidget->height() - 12);
     m_dockWidget->raise();
+    // An open home overlay or sidebar stays above the dock: its dim covers
+    // the dock and a click there closes it.
+    if (homeOverlayOpen()) {
+        m_homeScrim->raise();
+        if (m_homeWidget)
+            m_homeWidget->raise();
+    }
     if (m_overlayWidget && m_overlayWidget->isVisible())
         m_overlayWidget->raise();
 }

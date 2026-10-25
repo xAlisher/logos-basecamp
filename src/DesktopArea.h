@@ -175,7 +175,6 @@ public:
     // Removes the window, detaching its content first (see releaseContent).
     void removeWindow(AppWindow* w);
 
-    QStringList openKeys() const;
     QString activeKey() const;
 
 signals:

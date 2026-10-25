@@ -552,14 +552,6 @@ void DesktopArea::removeWindow(AppWindow* w)
     emit windowsChanged();
 }
 
-QStringList DesktopArea::openKeys() const
-{
-    QStringList keys;
-    for (AppWindow* w : appWindows())
-        keys << w->key();
-    return keys;
-}
-
 QString DesktopArea::activeKey() const
 {
     auto* w = qobject_cast<AppWindow*>(activeSubWindow());

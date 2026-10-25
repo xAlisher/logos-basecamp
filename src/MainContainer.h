@@ -64,13 +64,15 @@ private slots:
     void onOverlayActiveChanged(bool active);
     void onSidebarTooltipRequested(const QString& text, qreal y);
     void onAddApplicationDialogRequested(const QVariantMap& metadata);
-    // Desktop layout: the dock's two signals.
+    // Desktop layout: the shell's own page for a role nothing fills.
     void openSystemApp(const QString& key);
     // Open whatever app fills `role` (ADR-067). false: nothing can.
     bool openRole(const QString& role);
     // The home app's words for the bar (backend homePlaceholder) into TabArea.
     void pullHomePlaceholder();
+    // Desktop layout: the dock's app tiles, and its rebuild.
     void launchFromDock(const QString& name);
+    void updateDock();
     void openSettingsRepositories();
     void showSpotlight();
     void toggleSpotlight();
@@ -98,8 +100,8 @@ private:
 
     // ── Desktop layout (ShellPrefs::activeLayout() == "desktop") ──
     void setupDesktopUi();
-    void updateDock();
     void positionDock();
+    QStringList hiddenFromWindowLists() const;
     void onDesktopCloseRequested(const QString& key);
     QWidget* systemAppContent(const QString& key);
     QVariantMap launcherEntry(const QString& name) const;

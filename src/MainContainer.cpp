@@ -798,10 +798,14 @@ void MainContainer::setupDesktopUi()
     ShellDevQml::load(m_dockWidget,
         QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/DockPanel.qml")),
         [this](QObject* root) {
-            connect(root, SIGNAL(openSystemApp(QString)), this, SLOT(openSystemApp(QString)));
+            // Basecamp opens Spotlight for now; basecamp-experiments#43
+            // swaps its content for the home app.
+            connect(root, SIGNAL(openHome()), this, SLOT(toggleSpotlight()));
             connect(root, SIGNAL(launchApp(QString)), this, SLOT(launchFromDock(QString)));
             updateDock();
         });
+    // A role moving to another app changes which windows the dock leaves out.
+    connect(m_host->backendObject(), SIGNAL(rolesChanged()), this, SLOT(updateDock()));
     m_dockWidget->installEventFilter(this);
     m_dockWidget->show();
     // Panel 72 + 12 from the edge + a little air: maximised windows stop above it.
@@ -890,11 +894,38 @@ void MainContainer::updateDock()
     QObject* root = m_dockWidget->rootObject();
     if (!root)
         return;
-    root->setProperty("openKeys", QVariant(m_desktop->openKeys()));
+    const QStringList hidden = hiddenFromWindowLists();
+    QVariantList windows;
+    for (AppWindow* w : m_desktop->appWindows()) {
+        if (hidden.contains(w->key()))
+            continue;
+        windows.append(QVariantMap{
+            { QStringLiteral("key"), w->key() },
+            { QStringLiteral("title"), w->windowTitle() },
+        });
+    }
+    root->setProperty("windows", windows);
+    root->setProperty("hiddenApps", hidden);
     const QString active = m_desktop->activeKey();
     root->setProperty("activeKey", active);
     if (!active.isEmpty() && !active.startsWith(QStringLiteral("sys:")))
         m_host->setCurrentVisibleApp(active);
+}
+
+// Never listed as a window (basecamp-experiments#42): the home app (the
+// Basecamp entry stands for it) and the search ranker, which runs unseen.
+QStringList MainContainer::hiddenFromWindowLists() const
+{
+    QStringList hidden;
+    if (QObject* backend = m_host->backendObject()) {
+        const QVariantMap roles = backend->property("roles").toMap();
+        for (const char* role : { "home", "search" }) {
+            const QString holder = roles.value(QLatin1String(role)).toString();
+            if (!holder.isEmpty())
+                hidden << holder;
+        }
+    }
+    return hidden;
 }
 
 QVariantMap MainContainer::launcherEntry(const QString& name) const

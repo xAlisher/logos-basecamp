@@ -208,6 +208,7 @@ qt_add_qml_module(basecamp_icons_qml
         Basecamp/Icons/TintedSvg.qml
     RESOURCES
         Basecamp/Icons/logos-lambda.svg
+        Basecamp/Icons/basecamp-dock.svg
         Basecamp/Icons/dashboard.svg
         Basecamp/Icons/filter.svg
         Basecamp/Icons/module.svg

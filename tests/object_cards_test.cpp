@@ -729,6 +729,68 @@ private slots:
                  QStringLiteral("true"));
     }
 
+    // ── keyboard in edit mode (basecamp-experiments#54) ─────────────────
+
+    // An arrow moves a card a step: past the card above or below it (the
+    // others close up, so one cell may not be a change), along the columns,
+    // never off the grid. Shift and an arrow resizes it a cell.
+    void gridKeyMove()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l3 = migrateLayout(mods, 3)");
+        QCOMPARE(cells("l3"), QStringLiteral("transactions@0,0 2x4 | messages@2,0 1x3 | communities@2,3 1x3"
+                                             " | wallet@0,4 1x2 | news@0,6 3x2"));
+        // Down twice: below Communities, then below News.
+        h("var d1 = keyMove(l3, 'messages', 0, 1)");
+        QCOMPARE(cells("d1"), QStringLiteral("transactions@0,0 2x4 | communities@2,0 1x3 | messages@2,3 1x3"
+                                             " | wallet@0,4 1x2 | news@0,6 3x2"));
+        h("var d2 = keyMove(d1, 'messages', 0, 1)");
+        QCOMPARE(cells("d2"), QStringLiteral("transactions@0,0 2x4 | communities@2,0 1x3 | wallet@0,4 1x2"
+                                             " | news@0,6 3x2 | messages@2,8 1x3"));
+        // Up twice: back where it was.
+        QCOMPARE(cells("keyMove(keyMove(d2, 'messages', 0, -1), 'messages', 0, -1)"), cells("l3"));
+        // At the top, the right edge or the bottom: nothing changes.
+        QVERIFY(h("keyMove(l3, 'messages', 0, -1) === l3").toBool());
+        QVERIFY(h("keyMove(l3, 'messages', 1, 0) === l3").toBool());
+        QVERIFY(h("keyMove(d2, 'messages', 0, 1) === d2").toBool());
+        QVERIFY(h("keyMove(l3, 'nope', 0, 1) === l3").toBool());
+        // Left: into Transactions' columns, which moves down.
+        QCOMPARE(cells("keyMove(l3, 'messages', -1, 0)"),
+                 QStringLiteral("messages@1,0 1x3 | communities@2,0 1x3 | transactions@0,3 2x4"
+                                " | wallet@0,7 1x2 | news@0,9 3x2"));
+        // One column: Up swaps it with the card above, Left and Right do nothing.
+        h("var l1 = migrateLayout(mods, 1)");
+        QCOMPARE(cells("keyMove(l1, 'messages', 0, -1)"),
+                 QStringLiteral("messages@0,0 1x3 | transactions@0,3 1x4 | communities@0,7 1x3"
+                                " | wallet@0,10 1x2 | news@0,12 1x2"));
+        QVERIFY(h("keyMove(l1, 'messages', -1, 0) === l1").toBool());
+    }
+
+    void gridKeyResize()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l3 = migrateLayout(mods, 3)");
+        h("var lim = function (l, id) { return sizeLimits(blockFor(l, id), 3, 380, 16) }");
+        // Taller and shorter by a row, the others making room or closing up.
+        QCOMPARE(hs("JSON.stringify(blockFor(keyResize(l3, 'messages', 0, 1, lim(l3, 'messages')), 'messages'))"),
+                 QStringLiteral("{\"id\":\"messages\",\"x\":2,\"y\":0,\"w\":1,\"h\":4}"));
+        QCOMPARE(hs("blockFor(keyResize(l3, 'messages', 0, -1, lim(l3, 'messages')), 'communities').y"),
+                 QStringLiteral("2"));
+        // At the right edge it grows to the left; Transactions moves down.
+        QCOMPARE(cells("keyResize(l3, 'messages', 1, 0, lim(l3, 'messages'))"),
+                 QStringLiteral("messages@1,0 2x3 | transactions@0,3 2x4 | communities@2,3 1x3"
+                                " | wallet@0,7 1x2 | news@0,9 3x2"));
+        // Wider than the grid, narrower than one column, shorter than two
+        // rows: nothing changes.
+        h("var full = keyResize(l3, 'news', 1, 0, lim(l3, 'news'))");
+        QVERIFY(h("full === l3").toBool());
+        QVERIFY(h("keyResize(l3, 'messages', -1, 0, lim(l3, 'messages')) === l3").toBool());
+        QVERIFY(h("keyResize(l3, 'wallet', 0, -1, lim(l3, 'wallet')) === l3").toBool());
+        // Shrinking Transactions a column.
+        QCOMPARE(hs("blockFor(keyResize(l3, 'transactions', -1, 0, lim(l3, 'transactions')), 'transactions').w"),
+                 QStringLiteral("1"));
+    }
+
     // ── keyboard (basecamp-experiments#48) ──────────────────────────────
 
     void keyboardNavigation()

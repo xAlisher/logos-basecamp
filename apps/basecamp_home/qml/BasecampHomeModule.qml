@@ -16,7 +16,8 @@ import "BasecampHomeModules.js" as M
 // whole under the header, in 1 to 3 columns by its width, one-line rows when
 // it is two rows tall, a one-line summary when not even one fits.
 // A long press on its header asks for edit mode (basecamp-experiments#51);
-// in edit mode its cards are inert and home's grid moves it.
+// in edit mode its cards are inert and home's grid moves it and holds its
+// controls (#54).
 //
 // (File names here start with BasecampHome: two ui_qml apps shipping a file
 // of the same name collide, spec §11.)
@@ -41,9 +42,12 @@ Rectangle {
     // Its block's height in rows (0 = not on the grid yet): two rows draw
     // one-line rows.
     property int cellRows: 0
+    // Whether it counts what is new (edit mode's switch may say otherwise
+    // than the saved module until Done).
+    property bool notify: mod.module.notify === true
+    // Room the header leaves on its right (edit mode's controls sit there).
+    property real headerEnd: 0
 
-    signal changeRequested(var change)
-    signal removeRequested()
     // The envelopes it now shows (NewTabPage notes the unseen and marks them).
     signal rowsShown(var rows)
     signal raiseRequested(string id, string action, string text)
@@ -190,14 +194,19 @@ Rectangle {
         width: mod.width - 2 * Theme.spacing.medium
         spacing: Theme.spacing.small
 
-        // Name, how many show of how many, what is new, and the module's menu.
+        // Name, how many show of how many, what is new.
         Item {
             id: header
             width: parent.width
             height: Theme.minTouchTarget
+            // What the name and the count may take. In edit mode the count
+            // gives way when the name would not fit beside it.
+            readonly property real room: width - mod.headerEnd - newBadge.width - 3 * Theme.spacing.small
+            readonly property bool showCount: !mod.editing
+                                              || title.implicitWidth + countText.implicitWidth <= header.room
 
-            // Long press (500 ms) for edit mode. Under the menu button, and
-            // it lets the page take a drag, so the header still scrolls.
+            // Long press (500 ms) for edit mode. It lets the page take a
+            // drag, so the header still scrolls.
             MouseArea {
                 objectName: mod.objectName + ".header"
                 anchors.fill: parent
@@ -211,9 +220,8 @@ Rectangle {
                 textFormat: Text.PlainText
                 anchors.left: parent.left
                 anchors.verticalCenter: parent.verticalCenter
-                width: Math.min(implicitWidth, parent.width - menuButton.width - newBadge.width
-                                - countText.width - 3 * Theme.spacing.small)
-                text: mod.module.name + (mod.module.pinned ? "  ·  " + qsTr("Pinned") : "")
+                width: Math.max(0, Math.min(implicitWidth, header.room - (header.showCount ? countText.width : 0)))
+                text: mod.module.name
                 elide: Text.ElideRight
                 font.pixelSize: Theme.typography.subtitleText
                 font.weight: Theme.typography.weightMedium
@@ -224,6 +232,7 @@ Rectangle {
                 anchors.left: title.right
                 anchors.leftMargin: Theme.spacing.small
                 anchors.verticalCenter: parent.verticalCenter
+                visible: header.showCount
                 // "4 of 12": what shows of what it found.
                 text: mod.shown > 0 && mod.total > mod.shown ? qsTr("%1 of %2").arg(mod.shown).arg(mod.total)
                                                                : String(mod.total)
@@ -236,23 +245,11 @@ Rectangle {
                 anchors.left: countText.right
                 anchors.leftMargin: Theme.spacing.small
                 anchors.verticalCenter: parent.verticalCenter
-                // Only modules that notify count what is new.
-                visible: mod.module.notify === true && mod.newCount > 0
+                // Only modules that count new do; edit mode has its switch.
+                visible: mod.notify && mod.newCount > 0 && !mod.editing
                 width: visible ? implicitWidth : 0
                 text: qsTr("%1 new").arg(mod.newCount)
                 color: Theme.palette.accentOrange
-            }
-            LogosIconButton {
-                id: menuButton
-                objectName: mod.objectName + ".menu"
-                visible: !mod.editing
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                size: Theme.minTouchTarget
-                flat: true
-                iconSource: LogosIcons.more
-                Accessible.name: qsTr("%1 options").arg(mod.module.name)
-                onClicked: menu.popupUnder(menuButton)
             }
         }
 
@@ -321,26 +318,6 @@ Rectangle {
         let fresh = 0
         for (const e of mod.rows)
             if (e && (e.seen !== true || mod.newIds[e.id] === true)) ++fresh
-        return mod.module.notify === true && fresh > 0 ? qsTr("%1, %2 new").arg(base).arg(fresh) : base
-    }
-
-    // Its size is its block now (#53): pin, count new and remove stay here.
-    LogosMenu {
-        id: menu
-        LogosMenuItem {
-            objectName: mod.objectName + ".menu.pin"
-            text: mod.module.pinned ? qsTr("Unpin") : qsTr("Pin to the top")
-            onTriggered: mod.changeRequested({ pinned: !mod.module.pinned })
-        }
-        LogosMenuItem {
-            objectName: mod.objectName + ".menu.notify"
-            text: mod.module.notify ? qsTr("Stop counting new") : qsTr("Count new")
-            onTriggered: mod.changeRequested({ notify: !mod.module.notify })
-        }
-        LogosMenuItem {
-            objectName: mod.objectName + ".menu.remove"
-            text: qsTr("Remove")
-            onTriggered: mod.removeRequested()
-        }
+        return mod.notify && fresh > 0 ? qsTr("%1, %2 new").arg(base).arg(fresh) : base
     }
 }

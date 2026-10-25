@@ -610,6 +610,43 @@ function fitCount(heights, columns, available, spacing) {
     return n
 }
 
+// ── keyboard in edit mode (basecamp-experiments#54) ────────────────────
+
+// An arrow key on a card in edit mode: `id` one step left, right, up or
+// down (`dx`, `dy` of -1, 0 or 1). The others close up after each move
+// (place), so a card one cell further may land back where it was (below a
+// taller neighbour); then it tries the next cell, until the card's place
+// changes or it reaches the edge. Up past the card above swaps the two.
+// The layout itself when nothing would change.
+function keyMove(layout, id, dx, dy) {
+    var b = blockFor(layout, id)
+    if (!b) return layout
+    var steps = dx !== 0 ? layout.columns : rowsOf(layout) + 1
+    for (var step = 1; step <= steps; ++step) {
+        var x = b.x + dx * step, y = b.y + dy * step
+        if (x < 0 || x + b.w > layout.columns || y < 0) break
+        var out = place(layout, id, x, y)
+        var nb = blockFor(out, id)
+        if (nb && (nb.x !== b.x || nb.y !== b.y)) return out
+    }
+    return layout
+}
+
+// Shift and an arrow key: `id` one cell wider or narrower (`dw`), taller
+// or shorter (`dh`), within `limits` (sizeLimits). A card at the grid's
+// right edge grows to the left instead (a handle cannot, a key can). The
+// layout itself when it is at the limit.
+function keyResize(layout, id, dw, dh, limits) {
+    var b = blockFor(layout, id)
+    if (!b) return layout
+    var h = Math.max(limits.minH, Math.min(limits.maxH, b.h + dh))
+    if (dw > 0 && b.w + dw > limits.maxW && b.w + dw <= layout.columns)
+        return settle(layout, id, { x: layout.columns - (b.w + dw), w: b.w + dw, h: h })
+    var w = Math.max(limits.minW, Math.min(limits.maxW, b.w + dw))
+    if (w === b.w && h === b.h) return layout
+    return resize(layout, id, w, h)
+}
+
 // What home saves through the shell (shell.saveHomeSettings): its modules
 // and their layouts, one per column count.
 function settingsOf(modules, layouts) {

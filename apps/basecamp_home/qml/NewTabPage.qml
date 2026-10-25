@@ -294,18 +294,6 @@ Rectangle {
         topPadding: root.compact ? Theme.spacing.medium : Theme.spacing.xlarge * 2
         spacing: root.compact ? Theme.spacing.medium : Theme.spacing.large
 
-        // Who made this shell, above the search (desktop only: on a phone
-        // the bar is the shell's).
-        LogosText {
-            objectName: "newTab.brand"
-            visible: !root.compact
-            anchors.horizontalCenter: parent.horizontalCenter
-            text: "Basecampium"
-            font.pixelSize: 40
-            font.weight: Font.Bold
-            color: Theme.palette.textSecondary
-        }
-
         LogosSearchBar {
             id: search
             objectName: "home.bar"

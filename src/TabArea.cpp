@@ -802,7 +802,7 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     m_plus = new QToolButton(m_bar);
     m_plus->setObjectName(QStringLiteral("basecampium.newTab"));
     m_plus->setText(QStringLiteral("+"));
-    m_plus->setToolTip(tr("New tab (Ctrl+T)"));
+    m_plus->setToolTip(tr("Open Basecamp (Ctrl+T)"));
     m_plus->setFixedSize(36, 32);
     m_plus->setFocusPolicy(Qt::NoFocus);
     connect(m_plus, &QToolButton::clicked, this, [this]() { addNewTab(); });
@@ -1178,10 +1178,10 @@ void TabArea::rebuildSwitcher()
         if (!query.isEmpty() && !m_titles.value(key, key).contains(query, Qt::CaseInsensitive))
             continue;
         auto* card = new TabCard(iconFor(newTab ? QString() : m_icons.value(key)),
-                                 newTab ? tr("New tab") : m_titles.value(key, key),
+                                 newTab ? tr("Basecamp") : m_titles.value(key, key),
                                  i == current, !newTab && m_attention.contains(key), m_switcherGrid);
         card->setObjectName(QStringLiteral("basecampium.tabCard.") + key);
-        card->setAccessibleName(newTab ? tr("New tab") : m_titles.value(key, key));
+        card->setAccessibleName(newTab ? tr("Basecamp") : m_titles.value(key, key));
         card->onOpen = [this, key]() {
             const int idx = indexOf(key);
             if (idx >= 0)
@@ -1269,8 +1269,8 @@ QString TabArea::addNewTab()
     const QString key = QStringLiteral("new:%1").arg(++m_newCounter);
     const int i = m_tabs->addTab(QString());
     m_tabs->setTabData(i, key);
-    setLabel(m_tabs, i, iconFor(QString()), tr("New tab"));
-    m_tabs->setTabToolTip(i, tr("New tab"));
+    setLabel(m_tabs, i, iconFor(QString()), tr("Basecamp"));
+    m_tabs->setTabToolTip(i, tr("Basecamp"));
     updateStripWidth();
     m_tabs->setCurrentIndex(i);
     onCurrentChanged(i);
@@ -1912,7 +1912,7 @@ void TabArea::showBarMenu(QWidget* anchor, bool tabsOnly)
     const QString current = currentKey();
     const bool onTab = !current.isEmpty() && !isNewTabKey(current);
     const QIcon cross = appIcon("close.svg");
-    addMenuAction(menu, "menu.newTab", plusIcon(), tr("New tab"), [this]() { openHome(); });
+    addMenuAction(menu, "menu.newTab", plusIcon(), tr("Open Basecamp"), [this]() { openHome(); });
     if (!tabsOnly)
         addMenuAction(menu, "menu.reopen", reopenIcon(), tr("Reopen closed tab"),
                       [this]() { emit reopenClosedRequested(); });
@@ -1942,7 +1942,7 @@ void TabArea::showSheet()
     // Tab actions; then the shell's own apps as tiles (IronFox's History ·
     // Bookmarks · Downloads); then the destructive one, alone and red.
     QVBoxLayout* tabs = sheet->card();
-    sheet->add(tabs, SheetButton::Row, "sheet.newTab", plusIcon(), tr("New tab"), false, [this]() { openHome(); });
+    sheet->add(tabs, SheetButton::Row, "sheet.newTab", plusIcon(), tr("Open Basecamp"), false, [this]() { openHome(); });
     sheet->add(tabs, SheetButton::Row, "sheet.reopen", reopenIcon(), tr("Reopen closed tab"), false,
                [this]() { emit reopenClosedRequested(); });
     if (onTab)

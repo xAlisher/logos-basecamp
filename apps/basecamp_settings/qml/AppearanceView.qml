@@ -326,8 +326,10 @@ Item {
                     Layout.fillWidth: true
                     spacing: Theme.spacing.medium
 
-                    // One list: the built-in arrangements of Basecamp's own shell
-                    // (by Logos, no warning) and installed shell packages (warning).
+                    // One list: the two arrangements of Basecamp Legacy, the shell
+                    // built into Basecamp (by Logos, no warning), and the shell
+                    // packages: Basecamp itself (the default, no warning when it
+                    // ships with Basecamp) and installed ones (warning).
                     LogosComboBox {
                         id: shellCombo
                         objectName: "customisation.shellCombo"
@@ -336,7 +338,7 @@ Item {
                         Layout.preferredHeight: root.pickerHeight
                         readonly property var packages: root.prefs ? root.prefs.shellPackages : []
                         readonly property var values: ["builtin:sidebar", "builtin:desktop"].concat(packages.map(p => p.id))
-                        model: [qsTr("Default  by Logos"), qsTr("Desktop  by Logos")].concat(
+                        model: [qsTr("Basecamp Legacy  by Logos"), qsTr("Basecamp Legacy desktop  by Logos")].concat(
                                    packages.map(p => p.name + "  " + qsTr("by %1").arg(p.signer || p.author || qsTr("unknown"))))
                         readonly property string active: root.prefs
                             ? (root.prefs.activeShell !== "" ? root.prefs.activeShell : "builtin:" + root.prefs.activeLayout) : ""
@@ -354,6 +356,9 @@ Item {
                                 // Built in, by Logos: no warning, applies on restart.
                                 root.prefs.shell = ""
                                 root.prefs.layout = id.slice(8)
+                                sync()
+                            } else if (id !== chosen && packages[index - 2].builtIn) {
+                                root.prefs.shell = id
                                 sync()
                             } else if (id !== chosen) {
                                 shellWarning.pkg = packages[index - 2]
@@ -400,13 +405,15 @@ Item {
                             if (pk[i].id === (root.prefs ? root.prefs.activeShell : "")) return pk[i]
                         return null
                     }
-                    text: active
+                    text: active && active.builtIn
+                          ? qsTr("In use: %1, built into Basecamp.").arg(active.name)
+                          : active
                           ? qsTr("In use: %1 %2 by %3%4").arg(active.name).arg(active.version || "")
                                 .arg(active.signer || active.author || qsTr("unknown builder"))
                                 .arg(active.signed ? qsTr(" (signed, not verified by Logos)") : qsTr(" (unsigned)"))
                           : root.prefs && root.prefs.activeLayout === "desktop"
-                            ? qsTr("In use: Desktop, built into Basecamp.")
-                            : qsTr("In use: Default, built into Basecamp.")
+                            ? qsTr("In use: Basecamp Legacy desktop, built into Basecamp.")
+                            : qsTr("In use: Basecamp Legacy, built into Basecamp.")
                     font.pixelSize: Theme.typography.secondaryText
                     color: Theme.palette.textTertiary
                     wrapMode: Text.WordWrap
@@ -605,7 +612,7 @@ Item {
                 wrapMode: Text.WordWrap
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
-                text: qsTr("To go back: Settings → Customisation → Shell → Default, or hold Shift while starting Basecamp (or start it with --default-shell). Uninstalling the shell in Package Manager and restarting also returns you to the default.")
+                text: qsTr("To go back: Settings → Customisation → Shell, or hold Shift while starting Basecamp (or start it with --default-shell) to get Basecamp Legacy. Uninstalling the shell in Package Manager and restarting also returns you to Basecamp Legacy.")
             }
 
             LogosCheckbox {

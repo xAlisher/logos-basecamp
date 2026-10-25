@@ -269,6 +269,13 @@ bool MainContainer::applicationsInFront() const
 void MainContainer::onAddApplicationDialogRequested(const QVariantMap& metadata)
 {
     if (applicationsInFront()) return;
+    // Asked for from home's Apps block: the dialog is the app's install and
+    // details, over home; closing it leaves the user on home.
+    bool fromHome = false;
+    if (QObject* backend = m_host->backendObject())
+        QMetaObject::invokeMethod(backend, "isHomeInstall", Q_RETURN_ARG(bool, fromHome),
+                                  Q_ARG(QString, metadata.value(QStringLiteral("name")).toString()));
+    if (fromHome) return;
 
     m_host->setCurrentSectionIndex(ShellSection::AppManager);
     applyAppManagerSearch(metadata.value(QStringLiteral("name")).toString());

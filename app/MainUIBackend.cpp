@@ -1241,7 +1241,10 @@ void MainUIBackend::openApp(const QString& name, const QString& repositoryUrl, c
 void MainUIBackend::confirmCatalogInstall(const QString& name, const QString& repositoryUrl)
 { m_packageCoordinator->confirmCatalogInstall(name, repositoryUrl); }
 void MainUIBackend::notifyAddApplicationDialogClosed()
-{ m_packageCoordinator->notifyAddApplicationDialogClosed(); }
+{
+    m_homeInstall.clear();
+    m_packageCoordinator->notifyAddApplicationDialogClosed();
+}
 
 // cancelPendingAction is the one slot that doesn't route to a single manager:
 // a pending action lives on either UIPluginManager (local unload cascade) or

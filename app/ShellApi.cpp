@@ -532,6 +532,7 @@ void ShellApi::installApp(const QString& name)
         }
     }
     if (repositoryUrl.isEmpty()) return;   // not something this host can install
+    m_backend->setHomeInstall(name);
     m_backend->openApp(name, repositoryUrl, QVariantMap(), false);
 }
 

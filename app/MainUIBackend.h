@@ -267,6 +267,12 @@ public:
     // Applications shows everything again (home's "All apps"): any search
     // handed over earlier, or still pending, is dropped. Does not open it.
     void clearLauncherSearch();
+    // An install asked for from home (shell.installApp): its dialog opens over
+    // home, and the shell leaves the user there instead of bringing
+    // Applications forward filtered to the app. Until that dialog closes.
+    void setHomeInstall(const QString& name) { m_homeInstall = name; }
+    Q_INVOKABLE bool isHomeInstall(const QString& name) const
+    { return !name.isEmpty() && name == m_homeInstall; }
     QString pendingLauncherSearch() const { return m_pendingLauncherSearch; }
     QString takePendingLauncherSearch();
 
@@ -624,6 +630,7 @@ private:
     QPointer<QObject>    m_shellPreferences;
     QString              m_pendingSettingsSection;
     QString              m_pendingLauncherSearch;
+    QString              m_homeInstall;
     QString              m_homeQuery;
     QString              m_homePlaceholder;
     bool                 m_homeSearchInBar = false;

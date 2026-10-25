@@ -269,14 +269,223 @@ function stableOrder(prev, ids) {
     return { ids: out, map: map }
 }
 
-// ── grid ────────────────────────────────────────────────────────────────
+// ── cell grid (basecamp-experiments#49) ─────────────────────────────────
 
-// Columns for the grid at `width`: modules at least `minWidth` wide, at most
-// `maxColumns`; a phone gets one.
-function columnsFor(width, minWidth, gap, maxColumns) {
-    var n = Math.floor((width + gap) / (minWidth + gap))
-    return Math.max(1, Math.min(maxColumns, n))
+// Home's modules on a grid of cells that scrolls down: as many columns as the
+// width takes (columnsFor), rows of one fixed height. A layout is
+// { columns, blocks: [{ id, x, y, w, h }] }, in cells: `w` columns wide
+// (1..columns), `h` rows tall (kMinRows or more). Home keeps one per column
+// count it was arranged at; one it has none for is derived (layoutFor).
+
+var kRowHeight = 120
+var kMinRows = 2
+var kMaxColumns = 4
+// A module added since the layout was saved.
+var kNewBlock = { w: 1, h: 3 }
+
+// Columns for a grid `width` px wide: under 600 one, then one more every
+// 400 px, at most four.
+function columnsFor(width) {
+    return width >= 1400 ? 4 : width >= 1000 ? 3 : width >= 600 ? 2 : 1
 }
+
+function cell(v, fallback) {
+    return typeof v === "number" && isFinite(v) ? Math.round(v) : fallback
+}
+
+// A block clamped to the grid: at least one column and kMinRows rows, no
+// wider than the grid, not past its right edge or above its top.
+function clampBlock(b, columns) {
+    var w = Math.max(1, Math.min(columns, cell(b.w, 1)))
+    return {
+        id: str(b.id),
+        x: Math.max(0, Math.min(columns - w, cell(b.x, 0))),
+        y: Math.max(0, cell(b.y, 0)),
+        w: w,
+        h: Math.max(kMinRows, cell(b.h, kMinRows))
+    }
+}
+
+function overlaps(a, b) {
+    return a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h
+}
+
+function fits(placed, b) {
+    for (var i = 0; i < placed.length; ++i)
+        if (overlaps(placed[i], b)) return false
+    return true
+}
+
+// The blocks top to bottom, left to right; ties keep their order.
+function readingOrder(blocks) {
+    var order = blocks.map(function (b, i) { return { b: b, i: i } })
+    order.sort(function (p, q) { return p.b.y - q.b.y || p.b.x - q.b.x || p.i - q.i })
+    return order.map(function (p) { return p.b })
+}
+
+// `blocks` (moved, clamped) back in the order of `like`'s ids.
+function inOrderOf(like, blocks) {
+    var byId = {}
+    for (var i = 0; i < blocks.length; ++i) byId[blocks[i].id] = blocks[i]
+    return like.map(function (b) { return byId[b.id] })
+}
+
+// Every card moves up as far as it can without overlapping another, top to
+// bottom and left to right. One that overlaps a card already settled moves
+// down until it does not, so the result never overlaps.
+function compact(layout) {
+    var placed = []
+    var order = readingOrder(layout.blocks)
+    for (var i = 0; i < order.length; ++i) {
+        var b = clampBlock(order[i], layout.columns)
+        while (!fits(placed, b)) b.y += 1
+        while (b.y > 0) {
+            b.y -= 1
+            if (!fits(placed, b)) { b.y += 1; break }
+        }
+        placed.push(b)
+    }
+    return { columns: layout.columns, blocks: inOrderOf(layout.blocks, placed) }
+}
+
+// Puts `id` at `block` (clamped); the cards it now overlaps are pushed down,
+// out of its way and each other's, then everything compacts.
+function settle(layout, id, block) {
+    var columns = layout.columns
+    var moved = null
+    for (var i = 0; i < layout.blocks.length; ++i)
+        if (layout.blocks[i].id === id) moved = clampBlock(Object.assign({}, layout.blocks[i], block), columns)
+    if (!moved) return layout
+    var placed = [moved]
+    var order = readingOrder(layout.blocks)
+    for (var j = 0; j < order.length; ++j) {
+        if (order[j].id === id) continue
+        var b = clampBlock(order[j], columns)
+        while (!fits(placed, b)) b.y += 1
+        placed.push(b)
+    }
+    return compact({ columns: columns, blocks: inOrderOf(layout.blocks, placed) })
+}
+
+// Moves a card to cell (x, y).
+function place(layout, id, x, y) {
+    return settle(layout, id, { x: x, y: y })
+}
+
+// Gives a card `w` x `h` cells, clamped to the grid and kMinRows.
+function resize(layout, id, w, h) {
+    return settle(layout, id, { w: w, h: h })
+}
+
+// Lays `blocks` out in their order on `columns`: each at the first free cell
+// after the one before it (same row further right, or a row below), so the
+// reading order holds; widths clamped. `placed` are cards already there.
+function flow(blocks, columns, placed) {
+    placed = (placed || []).slice()
+    var last = readingOrder(placed)
+    var cy = last.length > 0 ? last[last.length - 1].y : 0
+    var cx = last.length > 0 ? last[last.length - 1].x : -1
+    var out = []
+    for (var i = 0; i < blocks.length; ++i) {
+        var b = clampBlock(blocks[i], columns)
+        var found = false
+        for (var y = cy; !found; ++y) {
+            for (var x = y === cy ? cx + 1 : 0; x + b.w <= columns && !found; ++x) {
+                b.x = x
+                b.y = y
+                found = fits(placed, b)
+            }
+        }
+        placed.push(b)
+        out.push(b)
+        cy = b.y
+        cx = b.x
+    }
+    return out
+}
+
+// The same cards on `columns` when that width has no layout of its own: in
+// reading order, widths clamped, each after the one before, compacted.
+function fitTo(layout, columns) {
+    return compact({ columns: columns, blocks: flow(readingOrder(layout.blocks), columns) })
+}
+
+// The first layout, from the size and pin modules had before the grid:
+// pinned first, then the saved order; small, medium and large are 2, 3 and 4
+// rows, large two columns wide, a row the whole width.
+function migrateLayout(modules, columns) {
+    var kHeights = { small: 2, medium: 3, large: 4, row: 3 }
+    var blocks = ordered(modules).map(function (m) {
+        return {
+            id: m.id,
+            x: 0, y: 0,
+            w: m.size === "row" ? columns : m.size === "large" ? 2 : 1,
+            h: kHeights.hasOwnProperty(m.size) ? kHeights[m.size] : kHeights.medium
+        }
+    })
+    return compact({ columns: columns, blocks: flow(blocks, columns) })
+}
+
+// A saved layout made safe: blocks clamped, ones for modules home no longer
+// has (or twice) dropped, overlaps settled. Null when there is none.
+function cleanLayout(layout, columns, ids) {
+    if (!layout || typeof layout !== "object") return null
+    var seen = {}
+    var blocks = arr(layout.blocks).filter(function (b) {
+        if (!b || ids.indexOf(b.id) < 0 || seen[b.id] === true) return false
+        seen[b.id] = true
+        return true
+    }).map(function (b) { return clampBlock(b, columns) })
+    return compact({ columns: columns, blocks: blocks })
+}
+
+// The layout home shows at `columns`: the one saved for it, else one derived
+// from the widest saved (fitTo), else the migrated first one. `saved` maps a
+// column count to a layout. Modules added since get a kNewBlock at the end;
+// removed ones drop out.
+function layoutFor(saved, columns, modules) {
+    var ids = modules.map(function (m) { return m.id })
+    saved = saved || {}
+    var base = cleanLayout(saved[columns], columns, ids)
+    if (!base) {
+        var widest = 0
+        for (var k in saved)
+            if (saved.hasOwnProperty(k) && Number(k) > widest && saved[k] && Number(k) <= kMaxColumns)
+                widest = Number(k)
+        var from = widest > 0 ? cleanLayout(saved[widest], widest, ids) : null
+        if (!from) return migrateLayout(modules, columns)
+        base = fitTo(from, columns)
+    }
+    var has = base.blocks.map(function (b) { return b.id })
+    var added = ordered(modules).filter(function (m) { return has.indexOf(m.id) < 0 })
+        .map(function (m) { return { id: m.id, x: 0, y: 0, w: kNewBlock.w, h: kNewBlock.h } })
+    if (added.length === 0) return base
+    return compact({ columns: columns, blocks: base.blocks.concat(flow(added, columns, base.blocks)) })
+}
+
+// What shows outside edit mode: the cards with nothing to show give up their
+// cells and the rest move up into them.
+function withoutHidden(layout, hiddenIds) {
+    return compact({ columns: layout.columns,
+                     blocks: layout.blocks.filter(function (b) { return hiddenIds.indexOf(b.id) < 0 }) })
+}
+
+// How many rows the layout takes.
+function rowsOf(layout) {
+    var rows = 0
+    for (var i = 0; i < layout.blocks.length; ++i)
+        rows = Math.max(rows, layout.blocks[i].y + layout.blocks[i].h)
+    return rows
+}
+
+// The block for `id`, or null.
+function blockFor(layout, id) {
+    for (var i = 0; i < layout.blocks.length; ++i)
+        if (layout.blocks[i].id === id) return layout.blocks[i]
+    return null
+}
+
+// ── masonry (until the cell grid renders) ───────────────────────────────
 
 // How many columns a module of `size` takes.
 function spanFor(size, columns) {

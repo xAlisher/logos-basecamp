@@ -378,10 +378,6 @@ private slots:
 
     void grid()
     {
-        // 390: one column; 1280 minus margins: three.
-        QCOMPARE(h("columnsFor(358, 340, 16, 3)").toInt(), 1);
-        QCOMPARE(h("columnsFor(1184, 340, 16, 3)").toInt(), 3);
-        QCOMPARE(h("columnsFor(100, 340, 16, 3)").toInt(), 1);
         QCOMPARE(h("spanFor('row', 3)").toInt(), 3);
         QCOMPARE(h("spanFor('large', 3)").toInt(), 2);
         QCOMPARE(h("spanFor('large', 1)").toInt(), 1);
@@ -399,6 +395,176 @@ private slots:
         QCOMPARE(hs("g1.items.map(i => i.col + ':' + i.y).join(' ')"), QStringLiteral("0:0 0:110"));
         QCOMPARE(h("g1.height").toInt(), 160);
         QCOMPARE(h("layout([], [], 3, 10).height").toInt(), 0);
+    }
+
+    // ── the cell grid (basecamp-experiments#49) ─────────────────────────
+
+    // A layout as "id@x,y wxh" in reading order.
+    QString cells(const QString& layout)
+    {
+        return hs(QStringLiteral("readingOrder((%1).blocks).map(b => b.id + '@' + b.x + ',' + b.y"
+                                 " + ' ' + b.w + 'x' + b.h).join(' | ')").arg(layout));
+    }
+
+    void gridColumns()
+    {
+        QCOMPARE(h("columnsFor(366)").toInt(), 1);
+        QCOMPARE(h("columnsFor(599)").toInt(), 1);
+        QCOMPARE(h("columnsFor(600)").toInt(), 2);
+        QCOMPARE(h("columnsFor(999)").toInt(), 2);
+        QCOMPARE(h("columnsFor(1000)").toInt(), 3);
+        QCOMPARE(h("columnsFor(1399)").toInt(), 3);
+        QCOMPARE(h("columnsFor(1400)").toInt(), 4);
+        QCOMPARE(h("columnsFor(3000)").toInt(), 4);
+        QCOMPARE(h("columnsFor(0)").toInt(), 1);
+    }
+
+    // The five defaults, from their old size and pin.
+    void gridMigration()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        QCOMPARE(cells("migrateLayout(mods, 4)"),
+                 QStringLiteral("transactions@0,0 2x4 | messages@2,0 1x3 | communities@3,0 1x3"
+                                " | wallet@2,3 1x2 | news@0,5 4x3"));
+        QCOMPARE(cells("migrateLayout(mods, 2)"),
+                 QStringLiteral("transactions@0,0 2x4 | messages@0,4 1x3 | communities@1,4 1x3"
+                                " | wallet@0,7 1x2 | news@0,9 2x3"));
+        QCOMPARE(cells("migrateLayout(mods, 1)"),
+                 QStringLiteral("transactions@0,0 1x4 | messages@0,4 1x3 | communities@0,7 1x3"
+                                " | wallet@0,10 1x2 | news@0,12 1x3"));
+        // Pinned first.
+        h("var pinned = updateModule(mods, 'news', { pinned: true })");
+        QCOMPARE(hs("readingOrder(migrateLayout(pinned, 4).blocks)[0].id"), QStringLiteral("news"));
+        QCOMPARE(hs("readingOrder(migrateLayout(pinned, 4).blocks)[0].w"), QStringLiteral("4"));
+        QCOMPARE(h("rowsOf(migrateLayout(mods, 4))").toInt(), 8);
+        QCOMPARE(h("rowsOf({ columns: 2, blocks: [] })").toInt(), 0);
+    }
+
+    void gridMoveAndResize()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l4 = migrateLayout(mods, 4)");
+        // Messages to the top left: Transactions is pushed below it, the
+        // rest move up into the room it left.
+        QCOMPARE(cells("place(l4, 'messages', 0, 0)"),
+                 QStringLiteral("messages@0,0 1x3 | wallet@2,0 1x2 | communities@3,0 1x3"
+                                " | transactions@0,3 2x4 | news@0,7 4x3"));
+        // Dropped far below: it rises to under the last card, News moving
+        // up into the room it left.
+        QCOMPARE(cells("place(l4, 'wallet', 3, 40)"),
+                 QStringLiteral("transactions@0,0 2x4 | messages@2,0 1x3 | communities@3,0 1x3"
+                                " | news@0,4 4x3 | wallet@3,7 1x2"));
+        // Past the right edge: clamped in.
+        QCOMPARE(hs("blockFor(place(l4, 'transactions', 9, 0), 'transactions').x"), QStringLiteral("2"));
+        // Resize: clamped to the columns and the minimum rows; what it now
+        // covers is pushed down.
+        h("var r = resize(l4, 'wallet', 9, 1)");
+        QCOMPARE(hs("JSON.stringify(blockFor(r, 'wallet'))"),
+                 QStringLiteral("{\"id\":\"wallet\",\"x\":0,\"y\":3,\"w\":4,\"h\":2}"));
+        QCOMPARE(hs("blockFor(r, 'transactions').y"), QStringLiteral("5"));
+        QCOMPARE(hs("blockFor(resize(l4, 'messages', 0, 0), 'messages').w"), QStringLiteral("1"));
+        QCOMPARE(hs("blockFor(resize(l4, 'messages', 0, 0), 'messages').h"), QStringLiteral("2"));
+        // Wider than the room right of it: moved left to fit.
+        QCOMPARE(hs("JSON.stringify(blockFor(resize(l4, 'communities', 2, 3), 'communities'))"),
+                 QStringLiteral("{\"id\":\"communities\",\"x\":2,\"y\":0,\"w\":2,\"h\":3}"));
+        // An unknown id changes nothing.
+        QCOMPARE(cells("place(l4, 'nope', 0, 0)"), cells("l4"));
+        // compact lifts a floating card and settles overlaps.
+        QCOMPARE(cells("compact({ columns: 2, blocks: [{ id: 'a', x: 0, y: 5, w: 1, h: 2 },"
+                       " { id: 'b', x: 0, y: 0, w: 2, h: 2 }, { id: 'c', x: 0, y: 1, w: 1, h: 3 }] })"),
+                 QStringLiteral("b@0,0 2x2 | c@0,2 1x3 | a@0,5 1x2"));
+    }
+
+    // No overlap, nothing out of the grid, nothing lost, after any of a few
+    // hundred random moves, resizes and width changes.
+    void gridNeverOverlaps()
+    {
+        const QString result = hs(R"JS((function () {
+            var seed = 49
+            function rnd(n) { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n }
+            var mods = defaultModules().map(sanitizeModule)
+            mods = addModule(mods, 'one', 'q1', null)
+            mods = addModule(mods, 'two', 'q2', null)
+            var ids = mods.map(function (m) { return m.id })
+            var l = migrateLayout(mods, 4)
+            function check(l, step) {
+                if (l.blocks.length !== ids.length) return step + ': lost a card'
+                for (var i = 0; i < l.blocks.length; ++i) {
+                    var a = l.blocks[i]
+                    if (a.x < 0 || a.y < 0 || a.w < 1 || a.h < kMinRows || a.x + a.w > l.columns)
+                        return step + ': ' + a.id + ' out of the grid'
+                    for (var j = i + 1; j < l.blocks.length; ++j)
+                        if (overlaps(a, l.blocks[j])) return step + ': ' + a.id + ' overlaps ' + l.blocks[j].id
+                }
+                // Compact: nothing can move up.
+                var c = compact(l)
+                for (var k = 0; k < l.blocks.length; ++k)
+                    if (c.blocks[k].y !== l.blocks[k].y) return step + ': not compact'
+                return ''
+            }
+            for (var step = 0; step < 400; ++step) {
+                var id = ids[rnd(ids.length)]
+                var op = rnd(3)
+                if (op === 0) l = place(l, id, rnd(6) - 1, rnd(20) - 2)
+                else if (op === 1) l = resize(l, id, rnd(6), rnd(7))
+                else l = fitTo(l, 1 + rnd(4))
+                var bad = check(l, step)
+                if (bad) return bad
+            }
+            return 'ok'
+        })())JS");
+        QCOMPARE(result, QStringLiteral("ok"));
+    }
+
+    void gridFitTo()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l4 = place(migrateLayout(mods, 4), 'news', 0, 0)");
+        h("function ids(l) { return readingOrder(l.blocks).map(b => b.id).join(',') }");
+        const QString order = hs("ids(l4)");
+        QCOMPARE(order, QStringLiteral("news,transactions,messages,communities,wallet"));
+        h("var l2 = fitTo(l4, 2), l1 = fitTo(l2, 1), back = fitTo(l1, 4)");
+        QCOMPARE(hs("ids(l2)"), order);
+        QCOMPARE(hs("ids(l1)"), order);
+        QCOMPARE(hs("ids(back)"), order);
+        // Widths clamped to the columns.
+        QCOMPARE(hs("blockFor(l2, 'news').w"), QStringLiteral("2"));
+        QCOMPARE(hs("l1.blocks.every(b => b.w === 1 && b.x === 0)"), QStringLiteral("true"));
+        QCOMPARE(h("back.columns").toInt(), 4);
+    }
+
+    void gridLayoutFor()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        // Nothing saved: the migrated layout, at every width.
+        QCOMPARE(cells("layoutFor({}, 3, mods)"), cells("migrateLayout(mods, 3)"));
+        QCOMPARE(cells("layoutFor(null, 1, mods)"), cells("migrateLayout(mods, 1)"));
+        // A saved layout wins over a derived one.
+        h("var mine = place(migrateLayout(mods, 2), 'wallet', 0, 0)");
+        h("var saved = { 2: mine, 4: place(migrateLayout(mods, 4), 'news', 0, 0) }");
+        QCOMPARE(cells("layoutFor(saved, 2, mods)"), cells("mine"));
+        // None for 3: derived from the widest saved (4).
+        QCOMPARE(cells("layoutFor(saved, 3, mods)"), cells("fitTo(saved[4], 3)"));
+        QCOMPARE(hs("readingOrder(layoutFor(saved, 1, mods).blocks)[0].id"), QStringLiteral("news"));
+        // A module removed since drops out; one added gets 1x3 at the end.
+        h("var fewer = removeModule(mods, 'messages')");
+        QVERIFY(h("blockFor(layoutFor(saved, 2, fewer), 'messages') === null").toBool());
+        h("var more = addModule(mods, 'mine', 'q', null)");
+        h("var withNew = layoutFor(saved, 2, more)");
+        QCOMPARE(hs("JSON.stringify(blockFor(withNew, 'custom-1'))"),
+                 QStringLiteral("{\"id\":\"custom-1\",\"x\":0,\"y\":12,\"w\":1,\"h\":3}"));
+        QCOMPARE(hs("readingOrder(withNew.blocks).pop().id"), QStringLiteral("custom-1"));
+        // A broken saved layout is cleaned: bad blocks clamped, duplicates
+        // and unknown ids dropped, overlaps settled.
+        h("var junk = { 2: { columns: 2, blocks: [{ id: 'news', x: -3, y: 0, w: 9, h: 0 },"
+          " { id: 'news', x: 1, y: 1, w: 1, h: 2 }, { id: 'ghost', x: 0, y: 0, w: 1, h: 2 },"
+          " { id: 'wallet', x: 0, y: 0, w: 1, h: 2 }, 7, null] } }");
+        QCOMPARE(cells("layoutFor(junk, 2, mods)"),
+                 QStringLiteral("news@0,0 2x2 | wallet@0,2 1x2 | transactions@1,2 1x3"
+                                " | messages@0,4 1x3 | communities@1,5 1x3"));
+        // Hidden cards give up their cells.
+        QCOMPARE(cells("withoutHidden(migrateLayout(mods, 4), ['transactions', 'wallet'])"),
+                 QStringLiteral("messages@2,0 1x3 | communities@3,0 1x3 | news@0,3 4x3"));
     }
 
     // ── keyboard (basecamp-experiments#48) ──────────────────────────────

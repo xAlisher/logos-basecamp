@@ -1328,12 +1328,34 @@ QWidget* TabArea::takeTab(const QString& key)
         m_stack->removeWidget(content);
         content->setProperty(kKeyProp, QVariant());
     }
+    // Closed from the switcher (its × or Close all): the switcher stays and
+    // only loses that card, until the last app goes; then home.
+    const bool keepSwitcher = m_switcherOpen;
+    m_holdSwitcher = keepSwitcher;
     m_tabs->removeTab(i);
+    m_holdSwitcher = false;
     updateStripWidth();
-    if (m_tabs->count() == 0)
+    if (keepSwitcher && contentTabCount() > 0) {
+        rebuildSwitcher();
+        updateCompactBar();
+    } else if (keepSwitcher) {
+        // The last app went: the switcher closes on home.
+        m_switcherOpen = false;
+        int home = -1;
+        for (int t = 0; t < m_tabs->count() && home < 0; ++t)
+            if (isNewTabKey(m_tabs->tabData(t).toString()))
+                home = t;
+        if (home < 0)
+            addNewTab();
+        else if (home == m_tabs->currentIndex())
+            onCurrentChanged(home);
+        else
+            m_tabs->setCurrentIndex(home);
+    } else if (m_tabs->count() == 0) {
         addNewTab();
-    else
+    } else {
         onCurrentChanged(m_tabs->currentIndex());
+    }
     return content;
 }
 
@@ -1384,6 +1406,12 @@ void TabArea::onCurrentChanged(int index)
         if (TabLabel* l = labelAt(m_tabs, i))
             l->setActive(i == index);
     applyAttention();
+    if (m_switcherOpen && m_holdSwitcher) {
+        // An app closed from the switcher: the current tab moved under it,
+        // but the user is still picking. takeTab decides what shows next.
+        updateCompactBar();
+        return;
+    }
     if (m_switcherOpen) {
         // A tab picked while the switcher is up (shortcut, notification) wins.
         m_switcherOpen = false;

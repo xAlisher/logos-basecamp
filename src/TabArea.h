@@ -135,6 +135,9 @@ private:
     QStringList m_attention;                // keys with unread notifications
     bool m_compact = false;
     bool m_switcherOpen = false;
+    // A tab is being taken out while the switcher is up (its × or Close all):
+    // the current tab may move, and the switcher stays (onCurrentChanged).
+    bool m_holdSwitcher = false;
     QWidget* m_bottom = nullptr;            // compact: the one bar
     QWidget* m_pill = nullptr;              // compact: the current tab, or the search on New tab
     QLineEdit* m_pillSearch = nullptr;

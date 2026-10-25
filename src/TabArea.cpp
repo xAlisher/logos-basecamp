@@ -254,7 +254,7 @@ void setLabel(TabStrip* bar, int i, const QIcon& icon, const QString& text)
         l->setFixedWidth(qMax(24, bar->tabWidth() - 44));
 }
 
-// A torn-off tab: its own bar (icon, title, drag area, "back to tabs",
+// A torn-off tab: its own bar (icon, title, drag area, "back to the main window",
 // window buttons) over the app's content.
 class DetachedWindow : public QWidget
 {
@@ -305,7 +305,7 @@ public:
         // Same size and look as the window buttons beside it.
         dock->setFixedSize(46, kBarHeight - 8);
         dock->setFocusPolicy(Qt::NoFocus);
-        dock->setToolTip(QObject::tr("Back to tabs (Ctrl+Shift+D)"));
+        dock->setToolTip(QObject::tr("Back to the main window (Ctrl+Shift+D)"));
         connect(dock, &QToolButton::clicked, this, [this]() { m_onDock(); });
         row->addWidget(dock, 0, Qt::AlignTop);
 
@@ -1445,8 +1445,8 @@ void TabArea::showMenu(int index, const QPoint& globalPos)
     const QString key = m_tabs->tabData(index).toString();
     QMenu menu(this);
     QAction* close = menu.addAction(tr("Close"));
-    QAction* others = menu.addAction(tr("Close other tabs"));
-    QAction* right = menu.addAction(tr("Close tabs to the right"));
+    QAction* others = menu.addAction(tr("Close other apps"));
+    QAction* right = menu.addAction(tr("Close apps to the right"));
     menu.addSeparator();
     QAction* undock = menu.addAction(tr("Move to new window"));
     undock->setEnabled(!isNewTabKey(key) && m_tabs->count() > 1);

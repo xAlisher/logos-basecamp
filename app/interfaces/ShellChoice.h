@@ -34,6 +34,14 @@ inline QString startShell(const QString& env, bool hasSaved, const QString& save
     return defaultAvailable ? defaultShell() : QString();
 }
 
+// A start that left its "starting" marker behind (the shell crashed, or the
+// app was killed before the marker was cleared) is a strike. A shell someone
+// chose (in Settings or BASECAMP_SHELL) falls back to Basecamp Legacy on the
+// first strike. The default shell, which a fresh profile gets without
+// choosing, only on the second start in a row that left the marker, so one
+// killed or very short run doesn't move that profile off it for good.
+inline int strikesToFallBack(bool explicitChoice) { return explicitChoice ? 1 : 2; }
+
 // What Settings and messages call a shell.
 inline QString displayName(const QString& id, const QString& fallback = QString())
 {

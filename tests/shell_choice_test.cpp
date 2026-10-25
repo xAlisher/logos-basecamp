@@ -48,6 +48,14 @@ private slots:
                  QString());
     }
 
+    void defaultShellGetsASecondStart()
+    {
+        // Nobody chose the default: one leftover marker is not enough.
+        QCOMPARE(ShellChoice::strikesToFallBack(false), 2);
+        // A shell someone picked falls back on the first one, as before.
+        QCOMPARE(ShellChoice::strikesToFallBack(true), 1);
+    }
+
     void displayNames()
     {
         QCOMPARE(ShellChoice::displayName(QStringLiteral("basecampium"), QStringLiteral("Basecampium")),

@@ -51,6 +51,8 @@ Rectangle {
     readonly property int contentWidth: Math.min(width - 2 * sideMargin, 1200)
     // Tiles the size of the Applications grid's (80), so an app looks the same in both.
     readonly property int tileSize: 80
+    // Art plus a label of up to two lines ("Package Manager" at 390).
+    readonly property int tileHeight: tileSize + 56
     readonly property int pitch: compact ? 108 : 124
 
     // Every installed app you can open, by name. Applications, Packages and
@@ -462,7 +464,7 @@ Rectangle {
             objectName: "newTab.grid"
             visible: root.pill === null && root.query.length === 0 && root.recentApps.length > 0
             width: parent.width
-            height: visible ? root.tileSize + 48 : 0
+            height: visible ? root.tileHeight : 0
             orientation: ListView.Horizontal
             clip: true
             boundsBehavior: Flickable.StopAtBounds
@@ -541,7 +543,11 @@ Rectangle {
 
         LogosText {
             objectName: "home.nothing"
-            visible: root.query.length > 0 && root.appHits.length === 0 && root.allRows.length === 0
+            // The Apps block is hidden under a pill, so then only the pill's
+            // own results count.
+            visible: root.query.length > 0
+                     && (root.pill !== null || root.appHits.length === 0)
+                     && (root.pill ? root.pillRows.length === 0 : root.allRows.length === 0)
             width: parent.width
             wrapMode: Text.Wrap
             text: qsTr("Nothing matches “%1”.").arg(root.rawQuery)
@@ -786,7 +792,7 @@ Rectangle {
         signal activated()
 
         width: root.pitch
-        height: root.tileSize + 48
+        height: root.tileHeight
         hoverEnabled: true
         onClicked: tile.activated()
 
@@ -855,7 +861,10 @@ Rectangle {
             anchors.horizontalCenter: parent.horizontalCenter
             width: parent.width - 8
             horizontalAlignment: Text.AlignHCenter
+            wrapMode: Text.Wrap
+            maximumLineCount: 2
             elide: Text.ElideRight
+            lineHeight: 1.1
             text: tile.label
             font.pixelSize: Theme.typography.secondaryText
             color: tile.hovered ? Theme.palette.text : Theme.palette.textSecondary

@@ -234,10 +234,19 @@ QJsonObject readJson(const QString& path)
 QVariantList ShellPrefs::shellPackages() const
 {
     QVariantList out;
+    const QDir bundled(QCoreApplication::applicationDirPath() + QStringLiteral("/../plugins/shells"));
+    // The default shell shipped with the app is the one that loads, even with
+    // an older basecampium package installed (window.cpp shellPath), so that
+    // package is not listed.
+    const bool defaultBundled =
+        !QDir(bundled.filePath(ShellChoice::defaultShell()))
+             .entryList({ QStringLiteral("main_ui.*") }, QDir::Files).isEmpty();
     const QDir plugins(userPluginsDir());
     for (const QFileInfo& fi : plugins.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
         const QJsonObject m = readJson(fi.absoluteFilePath() + QStringLiteral("/manifest.json"));
         if (m.value(QStringLiteral("type")).toString() != QLatin1String("ui_shell"))
+            continue;
+        if (defaultBundled && m.value(QStringLiteral("name")).toString() == ShellChoice::defaultShell())
             continue;
         QFile vf(fi.absoluteFilePath() + QStringLiteral("/variant"));
         QString variant;
@@ -264,7 +273,6 @@ QVariantList ShellPrefs::shellPackages() const
     }
     // Shells shipped next to the app: the default shell, Basecampium, and in
     // development builds any other.
-    const QDir bundled(QCoreApplication::applicationDirPath() + QStringLiteral("/../plugins/shells"));
     for (const QFileInfo& fi : bundled.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot, QDir::Name)) {
         bool dup = false;
         for (const QVariant& v : out)

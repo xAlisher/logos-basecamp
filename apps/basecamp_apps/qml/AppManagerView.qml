@@ -88,7 +88,8 @@ Rectangle {
             // or the grid is filtered with the search folded away and empty.
             if (root.compact && compactSearch.text !== searchText) {
                 compactSearch.text = searchText
-                if (searchText.length > 0) compactSearch.expanded = true
+                // Cleared from outside ("All apps"): fold it away as well.
+                compactSearch.expanded = searchText.length > 0
             }
         }
 

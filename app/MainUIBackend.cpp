@@ -773,6 +773,12 @@ bool MainUIBackend::requestLauncherSearch(const QString& query)
     return opened;
 }
 
+void MainUIBackend::clearLauncherSearch()
+{
+    m_pendingLauncherSearch.clear();
+    emit launcherSearchRequested(QString());
+}
+
 QString MainUIBackend::takePendingLauncherSearch()
 {
     return std::exchange(m_pendingLauncherSearch, QString());

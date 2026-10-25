@@ -546,6 +546,8 @@ bool ShellApi::openRole(const QString& role)
 {
     if (!holdsAny()) return false;
     if (holds("home")) {
+        // "All apps": the full list, not what was last searched there.
+        if (role == QLatin1String("launcher")) m_backend->clearLauncherSearch();
         emit m_backend->homeRoleRequested(role);
         return true;
     }

@@ -264,6 +264,9 @@ public:
     // Applications (the `launcher` role) opened on a search, e.g. from the
     // shell's own search. Kept until the app takes it, like the Settings section.
     Q_INVOKABLE bool requestLauncherSearch(const QString& query);
+    // Applications shows everything again (home's "All apps"): any search
+    // handed over earlier, or still pending, is dropped. Does not open it.
+    void clearLauncherSearch();
     QString pendingLauncherSearch() const { return m_pendingLauncherSearch; }
     QString takePendingLauncherSearch();
 

@@ -412,20 +412,31 @@ Rectangle {
     // the sidebar's feed mode always shows the feed.
     property string chosenView: "feed"
     readonly property string view: root.feedOnly ? "feed" : root.chosenView
-    // As saved (M.fromSettings), else the defaults.
-    property var modules: M.fromSettings(shell.homeSettings).modules
+    // As saved (M.fromSettings), else the defaults. Read once, not bound:
+    // a binding would make new ones on every save, and new ones rebuild
+    // every module. After that, onHomeSettingsChanged takes what changed.
+    property var modules: []
     // The modules' places on the grid, one layout per column count it was
     // arranged at ({ "<columns>": layout }); none yet derives them from the
     // modules' old size and pin (M.layoutFor).
-    property var layouts: M.fromSettings(shell.homeSettings).layouts
+    property var layouts: ({})
+    // Until then the empty defaults above are not home's: never saved.
+    property bool settingsRead: false
+    function readSettings() {
+        const s = M.fromSettings(shell.homeSettings)
+        root.layouts = s.layouts
+        root.modules = s.modules
+        root.settingsRead = true
+    }
     // Saved when they differ from what is saved. A save tells every view
     // (homeSettingsChanged), and each takes `modules` again from it: saving
     // that too would save inside the shell's signal (a binding loop).
     onModulesChanged: {
-        if (JSON.stringify(root.modules) !== JSON.stringify(M.fromSettings(shell.homeSettings).modules))
+        if (root.settingsRead && JSON.stringify(root.modules) !== JSON.stringify(M.fromSettings(shell.homeSettings).modules))
             root.saveSettings()
     }
     function saveSettings() {
+        if (!root.settingsRead) return
         if (!shell.saveHomeSettings(M.settingsOf(root.modules, root.layouts)))
             console.warn("Home: the shell did not keep home's settings")
     }
@@ -548,7 +559,9 @@ Rectangle {
     // A module's frame takes the focus (Tab, or Down from the search): the
     // arrows move it a step, Shift and the arrows resize it a cell (Right
     // and Down grow it), Enter is Done and Esc Cancel. Tab goes through the
-    // modules in reading order, each with its switch and ×, then Done.
+    // modules in reading order, each with its switch and ×, then the bar's
+    // buttons as they read (Undo when there is one, Reset layout, Cancel,
+    // Done).
     function keyEdit(id, key, shift) {
         const d = { [Qt.Key_Left]: [-1, 0], [Qt.Key_Right]: [1, 0],
                     [Qt.Key_Up]: [0, -1], [Qt.Key_Down]: [0, 1] }[key]
@@ -575,10 +588,11 @@ Rectangle {
         for (const m of frames) out.push(...m.editStops())
         return out
     }
-    // Tab (`step` 1) or Shift+Tab (-1) from `item`: the next stop, Done after
-    // the last module and the first module after Done.
+    // Tab (`step` 1) or Shift+Tab (-1) from `item`: the next stop, the bar
+    // after the last module and the first module after Done.
     function editTab(item, step) {
-        const stops = root.editStops().concat([editDone])
+        const bar = (editUndo.visible ? [editUndo] : []).concat([editReset, editCancel, editDone])
+        const stops = root.editStops().concat(bar)
         const n = stops.length
         const i = stops.indexOf(item)
         const j = i < 0 ? (step > 0 ? 0 : n - 1) : (i + step + n) % n
@@ -798,6 +812,7 @@ Rectangle {
         }
     }
     Component.onCompleted: {
+        root.readSettings()
         search.textInput.cursorDelegate = calmCursor
         shell.setBarPlaceholder(root.barPlaceholder)
         root.rawQuery = root.typedQuery
@@ -905,6 +920,17 @@ Rectangle {
         }
     }
 
+    // Edit mode's first tab stop, never kept: Done, first in QML's own tab
+    // chain, would give Shift+Tab to the previous widget (as home.edit.tabEnd
+    // says for Tab). Should it get the focus (Tab into home), it passes it on.
+    Item {
+        objectName: "home.edit.tabStart"
+        visible: root.editing
+        activeFocusOnTab: true
+        Accessible.ignored: true
+        onActiveFocusChanged: if (activeFocus) root.editTab(this, 1)
+    }
+
     // Edit mode's bar (#51), docked on the page's bottom edge (on a phone in
     // place of the pills): what to do, Reset layout, Cancel and Done.
     Rectangle {
@@ -981,6 +1007,10 @@ Rectangle {
                     height: Theme.minTouchTarget
                     text: qsTr("Cancel")
                     onClicked: root.cancelEdit()
+                    Keys.onReturnPressed: root.cancelEdit()
+                    Keys.onEnterPressed: root.cancelEdit()
+                    Keys.onTabPressed: root.editTab(editCancel, 1)
+                    Keys.onBacktabPressed: root.editTab(editCancel, -1)
                 }
                 LogosButton {
                     id: editReset
@@ -988,6 +1018,10 @@ Rectangle {
                     height: Theme.minTouchTarget
                     text: qsTr("Reset layout")
                     onClicked: root.resetLayout()
+                    Keys.onReturnPressed: root.resetLayout()
+                    Keys.onEnterPressed: root.resetLayout()
+                    Keys.onTabPressed: root.editTab(editReset, 1)
+                    Keys.onBacktabPressed: root.editTab(editReset, -1)
                 }
                 LogosButton {
                     id: editUndo
@@ -1000,6 +1034,8 @@ Rectangle {
                     onClicked: root.undoRemove()
                     Keys.onReturnPressed: root.undoRemove()
                     Keys.onEnterPressed: root.undoRemove()
+                    Keys.onTabPressed: root.editTab(editUndo, 1)
+                    Keys.onBacktabPressed: root.editTab(editUndo, -1)
                 }
             }
         }
@@ -1277,11 +1313,14 @@ Rectangle {
             property string dropKey: ""
             property real holdHeight: 0
 
-            function beginMove(id, card, at) {
+            // Taken at `at` (in the module) with the pointer at `p` (in
+            // `scroll`): the auto-scroll reads it before the first move.
+            function beginMove(id, card, at, p) {
                 if (!grid.editing) return
                 grid.dragBase = grid.layout
                 grid.holdHeight = grid.height
                 grid.grabAt = at
+                grid.pointer = p
                 grid.dragX = card.x
                 grid.dragY = card.y
                 grid.dragW = card.width
@@ -1563,6 +1602,18 @@ Rectangle {
         readonly property real headerBottom: Theme.spacing.medium + Theme.minTouchTarget
         // What the header leaves for these controls.
         readonly property real controlsWidth: editControls.width + Theme.spacing.small
+        // Count new says so only where the module's name keeps kMinTitle
+        // beside it; a narrower card shows the bare switch, which still
+        // has its Accessible.name. From the parts' sizes, not the Row's
+        // width, which the label itself changes.
+        readonly property real kMinTitle: 120
+        readonly property bool labelled: {
+            const bare = Math.max(Theme.minTouchTarget, notifySwitch.indicator.width + notifySwitch.spacing
+                                  + notifySwitch.leftPadding + notifySwitch.rightPadding)
+            const controls = bare + countNewText.advanceWidth + Theme.minTouchTarget + 24
+                             + 2 * editControls.spacing + Theme.spacing.small
+            return frame.width - 2 * Theme.spacing.medium - controls - 3 * Theme.spacing.small >= frame.kMinTitle
+        }
         // Its keyboard stops, in Tab order.
         function stops() { return [frame, notifySwitch, removeButton] }
 
@@ -1584,7 +1635,10 @@ Rectangle {
             } else if (event.key === Qt.Key_Escape) {
                 root.cancelEdit()
                 event.accepted = true
-            } else if (root.keyEdit(frame.modId, event.key, (event.modifiers & Qt.ShiftModifier) !== 0)) {
+            } else if (frame.activeFocus
+                       && root.keyEdit(frame.modId, event.key, (event.modifiers & Qt.ShiftModifier) !== 0)) {
+                // The frame's own focus only: arrows on its switch or ×
+                // (which pass them here) do not move the module.
                 event.accepted = true
             }
         }
@@ -1609,7 +1663,8 @@ Rectangle {
             onPressed: mouse => {
                 mover.moving = !root.compact || mouse.y < frame.headerBottom
                 mover.preventStealing = mover.moving
-                if (mover.moving) grid.beginMove(frame.modId, frame.card, Qt.point(mouse.x, mouse.y))
+                if (mover.moving) grid.beginMove(frame.modId, frame.card, Qt.point(mouse.x, mouse.y),
+                                                 mover.mapToItem(scroll, mouse.x, mouse.y))
             }
             onPositionChanged: mouse => {
                 if (mover.moving) grid.dragTo(mover.mapToItem(scroll, mouse.x, mouse.y))
@@ -1652,6 +1707,11 @@ Rectangle {
 
         // In the header's right corner: Count new, Remove, and the drag
         // handle (six dots; the frame itself is the keyboard's "Move").
+        TextMetrics {
+            id: countNewText
+            font: notifySwitch.labelItem.font
+            text: qsTr("Count new")
+        }
         Row {
             id: editControls
             x: frame.width - Theme.spacing.medium - width
@@ -1663,10 +1723,11 @@ Rectangle {
                 id: notifySwitch
                 objectName: "home.module." + frame.modName + ".notify"
                 anchors.verticalCenter: parent.verticalCenter
+                width: Math.max(implicitWidth, Theme.minTouchTarget)
                 height: Theme.minTouchTarget
                 leftPadding: 0
                 spacing: Theme.spacing.tiny
-                text: qsTr("Count new")
+                text: frame.labelled ? countNewText.text : ""
                 checked: frame.card !== null && frame.card.notify
                 Accessible.name: qsTr("Count new in %1").arg(frame.modName)
                 onToggled: root.setNotify(frame.modId, notifySwitch.checked)

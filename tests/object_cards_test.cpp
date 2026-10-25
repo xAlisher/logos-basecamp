@@ -590,6 +590,15 @@ private slots:
         QCOMPARE(cells("layoutFor(junk, 2, mods)"),
                  QStringLiteral("news@0,0 2x2 | wallet@0,2 1x2 | transactions@1,2 1x3"
                                 " | messages@0,4 1x3 | communities@1,5 1x3"));
+        // Absurd rows and heights (a hand edit, a bad sync): clamped, and
+        // compact lifts the card at once instead of a row at a time.
+        h("var far = { 3: { columns: 3, blocks: [{ id: 'transactions', x: 0, y: 1e17, w: 1, h: 1e9 },"
+          " { id: 'news', x: 1, y: 1e300, w: 2, h: -1e9 }] } }");
+        QCOMPARE(cells("layoutFor(far, 3, mods)"),
+                 QStringLiteral("transactions@0,0 1x8 | news@1,0 2x2 | messages@1,2 1x3 | communities@2,2 1x3"
+                                " | wallet@1,5 1x3"));
+        QCOMPARE(hs("JSON.stringify(clampBlock({ id: 'a', x: 0, y: 1e17, w: 1, h: 1e9 }, 3))"),
+                 QStringLiteral("{\"id\":\"a\",\"x\":0,\"y\":256,\"w\":1,\"h\":8}"));
         // Hidden cards give up their cells; the rest close up in reading
         // order. None hidden: the layout as it is.
         QCOMPARE(cells("withoutHidden(migrateLayout(mods, 4), ['transactions', 'wallet'])"),
@@ -694,8 +703,8 @@ private slots:
         QCOMPARE(hs("JSON.stringify(sizeLimits({ x: 0, y: 0, w: 3, h: 2 }, 4, 200, 12))"),
                  QStringLiteral("{\"minW\":2,\"maxW\":4,\"minH\":2,\"maxH\":8}"));
         QCOMPARE(hs("sizeLimits({ x: 0, y: 0, w: 1, h: 2 }, 4, 200, 12).minW"), QStringLiteral("1"));
-        // Taller than kMaxRows already: it is not cut down.
-        QCOMPARE(hs("sizeLimits({ x: 0, y: 0, w: 1, h: 10 }, 1, 366, 12).maxH"), QStringLiteral("10"));
+        // Never taller than kMaxRows (a block saved taller is cut to it).
+        QCOMPARE(hs("sizeLimits({ x: 0, y: 0, w: 1, h: 10 }, 1, 366, 12).maxH"), QStringLiteral("8"));
     }
 
     void gridSnapSize()
@@ -718,6 +727,17 @@ private slots:
         QCOMPARE(cells("resize(l2, 'transactions', 1, 4)"),
                  QStringLiteral("transactions@0,0 1x4 | communities@1,0 1x3 | messages@0,4 1x3"
                                 " | wallet@0,7 1x2 | news@0,9 2x2"));
+        // At 3 columns Messages is already beside it: narrower, it pulls
+        // Messages into the column it freed, and Communities moves up, so
+        // no column is left empty.
+        h("var l3 = migrateLayout(mods, 3)");
+        QCOMPARE(cells("resize(l3, 'transactions', 1, 4)"),
+                 QStringLiteral("transactions@0,0 1x4 | messages@1,0 1x3 | communities@2,0 1x3"
+                                " | wallet@0,4 1x2 | news@0,6 3x2"));
+        // Shorter only: nothing is pulled.
+        QCOMPARE(cells("resize(l3, 'transactions', 2, 2)"),
+                 QStringLiteral("transactions@0,0 2x2 | messages@2,0 1x3 | wallet@0,2 1x2"
+                                " | communities@2,3 1x3 | news@0,6 3x2"));
         h("var l4 = place(resize(migrateLayout(mods, 4), 'news', 1, 3), 'news', 0, 0)");
         QCOMPARE(cells("l4"), QStringLiteral("news@0,0 1x3 | messages@2,0 1x3 | communities@3,0 1x3"
                                              " | transactions@0,3 2x4 | wallet@2,3 1x2"));

@@ -281,16 +281,20 @@ function cell(v, fallback) {
     return typeof v === "number" && isFinite(v) ? Math.round(v) : fallback
 }
 
-// A block clamped to the grid: at least one column and kMinRows rows, no
-// wider than the grid, not past its right edge or above its top.
+// Lower than any grid home makes (kMaxModules cards of kMaxRows): a row
+// further down is from a broken save, and compact lifts it anyway.
+var kMaxY = 256
+
+// A block clamped to the grid: one column to all of them, kMinRows to
+// kMaxRows rows, not past its right edge, above its top or below kMaxY.
 function clampBlock(b, columns) {
     var w = Math.max(1, Math.min(columns, cell(b.w, 1)))
     return {
         id: str(b.id),
         x: Math.max(0, Math.min(columns - w, cell(b.x, 0))),
-        y: Math.max(0, cell(b.y, 0)),
+        y: Math.max(0, Math.min(kMaxY, cell(b.y, 0))),
         w: w,
-        h: Math.max(kMinRows, cell(b.h, kMinRows))
+        h: Math.max(kMinRows, Math.min(kMaxRows, cell(b.h, kMinRows)))
     }
 }
 
@@ -302,6 +306,26 @@ function fits(placed, b) {
     for (var i = 0; i < placed.length; ++i)
         if (overlaps(placed[i], b)) return false
     return true
+}
+
+// The lowest bottom of the cards in `placed` that `b` overlaps: the first
+// row it could fit below them. Its own y when it overlaps none.
+function below(placed, b) {
+    var y = b.y
+    for (var i = 0; i < placed.length; ++i)
+        if (overlaps(placed[i], b)) y = Math.max(y, placed[i].y + placed[i].h)
+    return y
+}
+
+// The row `b` rises to from where it is: under the lowest card above it in
+// its columns, else the top.
+function riseTo(placed, b) {
+    var y = 0
+    for (var i = 0; i < placed.length; ++i) {
+        var p = placed[i]
+        if (p.x < b.x + b.w && b.x < p.x + p.w && p.y + p.h <= b.y) y = Math.max(y, p.y + p.h)
+    }
+    return y
 }
 
 // The blocks top to bottom, left to right; ties keep their order.
@@ -326,11 +350,9 @@ function compact(layout) {
     var order = readingOrder(layout.blocks)
     for (var i = 0; i < order.length; ++i) {
         var b = clampBlock(order[i], layout.columns)
-        while (!fits(placed, b)) b.y += 1
-        while (b.y > 0) {
-            b.y -= 1
-            if (!fits(placed, b)) { b.y += 1; break }
-        }
+        // Down past what it overlaps, a card at a time, then up in one go.
+        while (!fits(placed, b)) b.y = below(placed, b)
+        b.y = riseTo(placed, b)
         placed.push(b)
     }
     return { columns: layout.columns, blocks: inOrderOf(layout.blocks, placed) }
@@ -383,9 +405,20 @@ function place(layout, id, x, y) {
     return settle(layout, id, { x: x, y: y })
 }
 
-// Gives a card `w` x `h` cells, clamped to the grid and kMinRows.
+// Gives a card `w` x `h` cells, clamped to the grid and kMinRows. Made
+// narrower, it pulls the next card in reading order up into the cell freed
+// at its top right (#52), so no column is left empty beside it; compact
+// alone only lifts cards, never moves them left.
 function resize(layout, id, w, h) {
-    return settle(layout, id, { w: w, h: h })
+    var out = settle(layout, id, { w: w, h: h })
+    var was = blockFor(layout, id), now = blockFor(out, id)
+    if (!was || !now || now.w >= was.w) return out
+    var free = { id: "", x: now.x + now.w, y: now.y, w: 1, h: 1 }
+    if (free.x >= out.columns || !fits(out.blocks, free)) return out
+    var order = readingOrder(out.blocks)
+    var next = order[order.indexOf(now) + 1]
+    if (!next || free.x + next.w > out.columns) return out
+    return place(out, next.id, free.x, free.y)
 }
 
 // Lays `blocks` out in their order on `columns`: each at the first free cell
@@ -535,7 +568,7 @@ var kMinCardWidth = 280
 // What a card's handles allow, in cells: { minW, maxW, minH, maxH }. Width
 // from the narrowest that is kMinCardWidth px wide (or the card's own width
 // when it is narrower already) to the grid's right edge; height kMinRows to
-// kMaxRows (or more, if it is taller already).
+// kMaxRows.
 function sizeLimits(block, columns, columnWidth, gap) {
     var need = Math.max(1, Math.ceil((kMinCardWidth + gap) / (columnWidth + gap)))
     var maxW = Math.max(1, columns - block.x)
@@ -543,7 +576,7 @@ function sizeLimits(block, columns, columnWidth, gap) {
         minW: Math.min(need, block.w, maxW),
         maxW: maxW,
         minH: kMinRows,
-        maxH: Math.max(kMaxRows, block.h)
+        maxH: kMaxRows
     }
 }
 

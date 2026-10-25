@@ -913,14 +913,11 @@ void MainContainer::positionDock()
         return;
     m_dockWidget->move((width() - m_dockWidget->width()) / 2,
                        height() - m_dockWidget->height() - 12);
+    // The dock stays above an open home overlay or sidebar (it ends above
+    // the dock); positionHomeOverlay follows the dock's new place.
     m_dockWidget->raise();
-    // An open home overlay or sidebar stays above the dock: its dim covers
-    // the dock and a click there closes it.
-    if (homeOverlayOpen()) {
-        m_homeScrim->raise();
-        if (m_homeWidget)
-            m_homeWidget->raise();
-    }
+    if (homeOverlayOpen())
+        positionHomeOverlay();
     if (m_overlayWidget && m_overlayWidget->isVisible())
         m_overlayWidget->raise();
 }
@@ -1063,6 +1060,8 @@ void MainContainer::openSettingsRepositories()
 
 void MainContainer::launchFromDock(const QString& name)
 {
+    if (homeOverlayOpen())
+        hideHomeOverlay();
     if (AppWindow* w = m_desktop ? m_desktop->window(name) : nullptr) {
         m_desktop->restoreAndRaise(w);
         return;
@@ -1104,10 +1103,14 @@ void MainContainer::positionHomeOverlay()
         return;
     const bool open = homeOverlayOpen();
     const int top = m_statusBar ? m_statusBar->height() : 0;
+    // The overlay ends a gap above the dock, so the dock stays in view and
+    // usable while it is open.
+    const int dock = m_dockWidget && m_dockWidget->isVisible()
+        ? std::max(kDockReserve, height() - m_dockWidget->y()) : kDockReserve;
     const QRect panel = m_homeSidebar ? HomeOverlayGeometry::sidebar(size(), top)
-                                      : HomeOverlayGeometry::panel(size(), top, kDockReserve);
+                                      : HomeOverlayGeometry::panel(size(), top, dock);
     const QRect content = m_homeSidebar ? HomeOverlayGeometry::sidebarContent(size(), top)
-                                        : HomeOverlayGeometry::content(size(), top, kDockReserve);
+                                        : HomeOverlayGeometry::content(size(), top, dock);
     // The sidebar's dim leaves the top bar alone, so its Activity button
     // (and Search) stay live while it is open.
     const QRect scrim = m_homeSidebar ? QRect(0, top, width(), std::max(0, height() - top)) : rect();
@@ -1134,7 +1137,10 @@ void MainContainer::positionHomeOverlay()
             m_homeWidget->hide();
         }
     }
-    // A dialog asked for from home (an install) stays above it.
+    // The dock stays above the dim; a dialog asked for from home (an
+    // install) stays above everything.
+    if (open && m_dockWidget)
+        m_dockWidget->raise();
     if (open && m_overlayWidget && m_overlayWidget->isVisible())
         m_overlayWidget->raise();
 }

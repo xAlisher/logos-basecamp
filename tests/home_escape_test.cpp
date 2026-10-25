@@ -1,7 +1,8 @@
 // Unit tests for Esc on the desktop layout's Basecamp overlay and Activity
 // sidebar (src/HomeEscape.h, basecamp-experiments#47): the shell asks home's
 // QML root to clear its search first and closes only when home had nothing
-// to clear; a dialog over home takes the key; a home app without
+// to clear; a key that went outside home's view closes at once; a dialog
+// over home takes the key; a home app without
 // escapeSearch() (or with an odd answer) gets the old close.
 //
 // Run: nix build .#unit-tests -L
@@ -55,7 +56,7 @@ private slots:
     {
         auto h = realHome(QStringLiteral("ada"));
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Cleared);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Cleared);
         QCOMPARE(h->property("text").toString(), QString());
     }
 
@@ -63,8 +64,8 @@ private slots:
     {
         auto h = realHome(QStringLiteral("ada"));
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Cleared);
-        QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Close);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Cleared);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Close);
         QCOMPARE(h->property("asked").toInt(), 2);
     }
 
@@ -72,14 +73,14 @@ private slots:
     {
         auto h = realHome(QString());
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Close);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Close);
     }
 
     void dialogTakesTheKeyAndHomeIsNotAsked()
     {
         auto h = realHome(QStringLiteral("ada"));
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(true, true, h.get()), HomeEscape::Action::Ignore);
+        QCOMPARE(HomeEscape::onEscape(true, true, true, h.get()), HomeEscape::Action::Ignore);
         QCOMPARE(h->property("asked").toInt(), 0);
         QCOMPARE(h->property("text").toString(), QStringLiteral("ada"));
     }
@@ -88,8 +89,20 @@ private slots:
     {
         auto h = realHome(QStringLiteral("ada"));
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(false, false, h.get()), HomeEscape::Action::Ignore);
+        QCOMPARE(HomeEscape::onEscape(false, false, true, h.get()), HomeEscape::Action::Ignore);
         QCOMPARE(h->property("asked").toInt(), 0);
+    }
+
+    // The key went elsewhere (the dock, the top bar): home is not asked, and
+    // whatever home holds (text, a focused result) does not keep it open.
+    void keyOutsideHomeClosesAndHomeIsNotAsked()
+    {
+        auto h = realHome(QStringLiteral("ada"));
+        QVERIFY(h);
+        QCOMPARE(HomeEscape::onEscape(true, false, false, h.get()), HomeEscape::Action::Close);
+        QCOMPARE(h->property("asked").toInt(), 0);
+        QCOMPARE(h->property("text").toString(), QStringLiteral("ada"));
+        QCOMPARE(HomeEscape::onEscape(true, true, false, h.get()), HomeEscape::Action::Ignore);
     }
 
     // Home is any app the user picks for the role: without the function, or
@@ -98,8 +111,8 @@ private slots:
     {
         auto h = home(QStringLiteral("property string text: \"ada\""));
         QVERIFY(h);
-        QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Close);
-        QCOMPARE(HomeEscape::onEscape(true, false, nullptr), HomeEscape::Action::Close);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Close);
+        QCOMPARE(HomeEscape::onEscape(true, false, true, nullptr), HomeEscape::Action::Close);
     }
 
     void onlyTrueCountsAsCleared()
@@ -108,7 +121,7 @@ private slots:
                                        QStringLiteral("undefined"), QStringLiteral("false") }) {
             auto h = home(QStringLiteral("function escapeSearch() { return %1 }").arg(answer));
             QVERIFY(h);
-            QCOMPARE(HomeEscape::onEscape(true, false, h.get()), HomeEscape::Action::Close);
+            QCOMPARE(HomeEscape::onEscape(true, false, true, h.get()), HomeEscape::Action::Close);
         }
     }
 };

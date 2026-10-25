@@ -82,16 +82,18 @@ Rectangle {
         const f = root.focusedItem()
         return f !== null && root.within(f, page) && !root.within(f, search)
     }
-    // The rows under Recent apps, top to bottom: app rows, then cards.
-    function navRows() {
+    // The lines under Recent apps, top to bottom, each the results side by
+    // side on it: an app row, a card, or a module's cards in a strip or two
+    // columns (Left and Right go along those, M.navMove).
+    function navGroups() {
         const out = []
         if (appsBlock.visible)
             for (let i = 0; i < appHitRepeater.count; ++i) {
                 const it = appHitRepeater.itemAt(i)
-                if (it) out.push(it)
+                if (it) out.push([it])
             }
         if (feed.visible)
-            return out.concat(feed.navCards())
+            return out.concat(feed.navCards().map(c => [c]))
         if (grid.visible) {
             const mods = []
             for (let i = 0; i < moduleRepeater.count; ++i) {
@@ -99,10 +101,20 @@ Rectangle {
                 if (m && m.visible) mods.push(m)
             }
             mods.sort((a, b) => a.y !== b.y ? a.y - b.y : a.x - b.x)
-            for (const m of mods) out.push(...m.navCards())
+            for (const m of mods) out.push(...m.navGroups())
         }
         return out
     }
+    // The same flattened: `rows` top to bottom and left to right, `lines`
+    // the line each is on.
+    function navLayout() {
+        const rows = [], lines = []
+        const groups = root.navGroups()
+        for (let g = 0; g < groups.length; ++g)
+            for (const it of groups[g]) { rows.push(it); lines.push(g) }
+        return { rows: rows, lines: lines }
+    }
+    function navRows() { return root.navLayout().rows }
     // Which result `f` is in: { where: "tile" | "row", index, stop, key }
     // (key: the card's object or the app row's app, to find it again), or
     // null. `rows` is navRows().
@@ -122,15 +134,29 @@ Rectangle {
             }
         return null
     }
-    // The result last focused from the keyboard ({ where, index, key }). The
-    // feed and the Apps block are drawn again whenever their results change
-    // (a pending payment moves every few seconds), which drops the focused
-    // card; the focus then goes back to the same object, or the same place.
+    // The result last focused from the keyboard ({ where, index, key }) and
+    // its item. The feed and the Apps block are drawn again whenever their
+    // results change (a pending payment moves every few seconds), which
+    // drops the focused card; the focus then goes back to the same object,
+    // or the same place. Only then: when the focus leaves for somewhere else
+    // (the window lost it, a click in the dock or another app) while the
+    // result is still there, nothing is taken back.
     property var navAt: null
+    property Item navItem: null
     function restoreNav() {
         const at = root.navAt
         const f = root.focusedItem()
         if (!at || (f && root.within(f, page))) return
+        // The result is still on the page: the focus left for somewhere else
+        // (the window lost it, a click in the dock or another app), so it
+        // stays there and the ring goes out (#48 review). A redrawn result
+        // is out of the page by now (unparented, or destroyed: null).
+        const old = root.navItem
+        if (old && old.visible && root.within(old, page)) {
+            root.navAt = null
+            root.navItem = null
+            return
+        }
         if (at.where === "tile") {
             if (appRow.visible && appRow.count > 0) root.focusTile(Math.min(at.index, appRow.count - 1))
             else root.focusSearch()
@@ -148,13 +174,15 @@ Rectangle {
         const at = root.locate(f, root.navRows())
         if (at) {
             root.navAt = { where: at.where, index: at.index, key: at.key }
+            root.navItem = at.stop
         } else if (root.navAt && (!f || !root.within(f, page))) {
-            // Its result was drawn again: bring the focus back once the new
-            // one is there.
+            // Its result may have been drawn again: once that is done,
+            // restoreNav brings the focus back to the new one.
             Qt.callLater(root.restoreNav)
             return
         } else {
             root.navAt = null
+            root.navItem = null
         }
         Qt.callLater(root.revealFocus)
     }
@@ -195,7 +223,8 @@ Rectangle {
         if (!key && !isEnter) return
 
         const tiles = appRow.visible ? appRow.count : 0
-        const rows = root.navRows()
+        const nav = root.navLayout()
+        const rows = nav.rows
         const from = inSearch ? { where: "search" } : root.locate(f, rows)
         if (!from) return
         const stop = from.stop
@@ -207,7 +236,7 @@ Rectangle {
             }
             return
         }
-        const to = M.navMove(from, key, tiles, rows.length, appRow.currentIndex)
+        const to = M.navMove(from, key, tiles, rows.length, appRow.currentIndex, nav.lines)
         if (!to) return
         event.accepted = true
         if (to.where === "search") root.focusSearch()
@@ -244,8 +273,26 @@ Rectangle {
     property string barQuery: ""
     // The desktop's Activity sidebar: the search, the pills and the feed only.
     property bool feedOnly: false
-    readonly property string rawQuery: (searchInBar ? barQuery : search.text).trim()
+    // What is typed, and what the results are for: the same text a moment
+    // after the last keystroke (basecamp-experiments#27, the flood test:
+    // each search ranks the whole store, so typing fast asked for one per
+    // letter). Emptied at once (Esc, a new visit); Enter applies it first.
+    readonly property string typedQuery: (searchInBar ? barQuery : search.text).trim()
+    property string rawQuery: ""
     readonly property string query: rawQuery.toLowerCase()
+    onTypedQueryChanged: {
+        if (root.typedQuery.length === 0) root.applyQuery()
+        else queryTimer.restart()
+    }
+    function applyQuery() {
+        queryTimer.stop()
+        root.rawQuery = root.typedQuery
+    }
+    Timer {
+        id: queryTimer
+        interval: 100
+        onTriggered: root.applyQuery()
+    }
     // Phone width (Basecampium's compact layout): tighter margins and tiles.
     readonly property bool compact: width < 600
     readonly property int sideMargin: compact ? Theme.spacing.medium : Theme.spacing.xlarge * 2
@@ -323,6 +370,7 @@ Rectangle {
     // Enter: the first app found that is installed (never an install).
     function openFirst() {
         if (root.feedOnly) return
+        if (queryTimer.running) root.applyQuery()
         const hit = root.appHits.find(a => a.state === "running" || a.state === "installed")
         if (root.query.length > 0 && hit) root.launchApp(hit.name)
     }
@@ -376,9 +424,9 @@ Rectangle {
     }
 
     function startVisit() {
+        root.flushMarks()
         root.now = Date.now()
         root.newIds = ({})
-        root.toMark = []
         root.visit += 1
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
@@ -456,8 +504,8 @@ Rectangle {
         return rows
     }
 
-    onRawQueryChanged: { refreshAll(); refreshApps() }
-    onPillChanged: refreshPill()
+    onRawQueryChanged: { flushMarks(); refreshAll(); refreshApps() }
+    onPillChanged: { flushMarks(); refreshPill() }
     onViewChanged: if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     Connections {
         target: root.allResults
@@ -477,10 +525,16 @@ Rectangle {
     Timer {
         id: markTimer
         interval: 1500
-        onTriggered: {
-            if (root.toMark.length > 0) shell.markSeen(root.toMark)
-            root.toMark = []
-        }
+        onTriggered: root.flushMarks()
+    }
+    // Marks what was noted now. The host marks only ids still in this view's
+    // results, so this runs before the results change under them too (new
+    // text, a pill, the modules dropping theirs), or they would stay unseen
+    // for good: noted, in newIds, never noted again in this visit.
+    function flushMarks() {
+        markTimer.stop()
+        if (root.toMark.length > 0) shell.markSeen(root.toMark)
+        root.toMark = []
     }
     // Relative times ("5 min") move on.
     Timer {
@@ -529,6 +583,7 @@ Rectangle {
     Component.onCompleted: {
         search.textInput.cursorDelegate = calmCursor
         shell.setBarPlaceholder(root.barPlaceholder)
+        root.rawQuery = root.typedQuery
         root.refreshAll()
         root.refreshApps()
         root.startVisit()
@@ -838,6 +893,9 @@ Rectangle {
                            + (M.spanFor(modelData.size, grid.columns) - 1) * grid.gap
                     barQuery: root.rawQuery
                     pill: root.pill
+                    // Searching only while the modules show (#27).
+                    live: root.view === "grid"
+                    onReleasing: root.flushMarks()
                     now: root.now
                     newIds: root.newIds
                     visit: root.visit

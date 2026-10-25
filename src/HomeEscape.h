@@ -10,6 +10,8 @@
 // Esc there), so it asks home before closing: home's root answers through
 // escapeSearch() whether it had text to clear. A home app without that
 // function, or one that answers anything but true, gets the old behaviour.
+// Only a key home's view has (`inHome`) goes to home: with the focus in the
+// dock or the top bar, Esc closes at once, as it did before.
 namespace HomeEscape {
 
 enum class Action { Ignore, Cleared, Close };
@@ -26,10 +28,13 @@ inline bool clearInHome(QObject* homeRoot)
 }
 
 // What Esc does while home is `open`; a dialog up over it takes the key.
-inline Action onEscape(bool open, bool dialogUp, QObject* homeRoot)
+// `inHome`: the key went to home's view (it has the keyboard focus).
+inline Action onEscape(bool open, bool dialogUp, bool inHome, QObject* homeRoot)
 {
     if (!open || dialogUp)
         return Action::Ignore;
+    if (!inHome)
+        return Action::Close;
     return clearInHome(homeRoot) ? Action::Cleared : Action::Close;
 }
 

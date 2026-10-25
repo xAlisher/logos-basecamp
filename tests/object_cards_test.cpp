@@ -52,11 +52,14 @@ class ObjectCardsTest : public QObject {
 
     // Where an arrow takes the focus: "where:index", or "-" when the key is
     // not home's.
-    QString nav(const QString& from, const QString& key, int tiles, int rows, int lastTile = 0)
+    // `lines`: the rows' visual lines as a JS array ("" for none).
+    QString nav(const QString& from, const QString& key, int tiles, int rows, int lastTile = 0,
+                const QString& lines = QString())
     {
-        return hs(QStringLiteral("(function(){ var t = navMove(%1, '%2', %3, %4, %5);"
+        return hs(QStringLiteral("(function(){ var t = navMove(%1, '%2', %3, %4, %5, %6);"
                                  " return t ? t.where + (t.where === 'search' ? '' : ':' + t.index) : '-' })()")
-                      .arg(from, key).arg(tiles).arg(rows).arg(lastTile));
+                      .arg(from, key).arg(tiles).arg(rows).arg(lastTile)
+                      .arg(lines.isEmpty() ? QStringLiteral("undefined") : lines));
     }
 
 private slots:
@@ -439,6 +442,49 @@ private slots:
         // Rows that shrank under the focus: clamped.
         QCOMPARE(nav(row(7), "down", 0, 3), QStringLiteral("row:2"));
         QCOMPARE(nav(QStringLiteral("null"), "down", 3, 5), QStringLiteral("-"));
+    }
+
+    // Cards side by side (a module's sideways strip, a large module's two
+    // columns) share a line: Left and Right go along it, Up and Down leave it
+    // for the line above or below, to the card in the same place or the
+    // nearest (basecamp-experiments#48 review).
+    void keyboardNavigationByLine()
+    {
+        auto row = [](int i) { return QStringLiteral("{ where: 'row', index: %1 }").arg(i); };
+        // Modules view: an app row (0), a strip of four (1-4), a module below (5).
+        const QString strip = QStringLiteral("[0, 1, 1, 1, 1, 2]");
+        QCOMPARE(nav(row(1), "right", 0, 6, 0, strip), QStringLiteral("row:2"));
+        QCOMPARE(nav(row(4), "right", 0, 6, 0, strip), QStringLiteral("row:4"));
+        QCOMPARE(nav(row(2), "left", 0, 6, 0, strip), QStringLiteral("row:1"));
+        QCOMPARE(nav(row(1), "left", 0, 6, 0, strip), QStringLiteral("row:1"));
+        // Down from anywhere in the strip: the module below, not the next card.
+        QCOMPARE(nav(row(3), "down", 0, 6, 0, strip), QStringLiteral("row:5"));
+        QCOMPARE(nav(row(1), "down", 0, 6, 0, strip), QStringLiteral("row:5"));
+        // Up from the strip: the line above; from below: into the strip.
+        QCOMPARE(nav(row(4), "up", 0, 6, 0, strip), QStringLiteral("row:0"));
+        QCOMPARE(nav(row(5), "up", 0, 6, 0, strip), QStringLiteral("row:1"));
+        QCOMPARE(nav(row(0), "down", 0, 6, 0, strip), QStringLiteral("row:1"));
+        // A line of one: Left and Right stay the card's own.
+        QCOMPARE(nav(row(5), "right", 0, 6, 0, strip), QStringLiteral("-"));
+        QCOMPARE(nav(row(0), "left", 0, 6, 0, strip), QStringLiteral("-"));
+        // The last line: Down stays; the first: Up goes to the tiles or the search.
+        QCOMPARE(nav(row(5), "down", 0, 6, 0, strip), QStringLiteral("row:5"));
+        QCOMPARE(nav(row(0), "up", 3, 6, 1, strip), QStringLiteral("tile:1"));
+        QCOMPARE(nav(row(2), "up", 0, 3, 0, QStringLiteral("[0, 0, 0]")), QStringLiteral("search"));
+
+        // A large module's two columns: pairs, and an odd one out at the end.
+        const QString pairs = QStringLiteral("[0, 0, 1, 1, 2]");
+        QCOMPARE(nav(row(1), "down", 0, 5, 0, pairs), QStringLiteral("row:3"));
+        QCOMPARE(nav(row(0), "down", 0, 5, 0, pairs), QStringLiteral("row:2"));
+        QCOMPARE(nav(row(3), "down", 0, 5, 0, pairs), QStringLiteral("row:4"));
+        QCOMPARE(nav(row(4), "up", 0, 5, 0, pairs), QStringLiteral("row:2"));
+        QCOMPARE(nav(row(3), "up", 0, 5, 0, pairs), QStringLiteral("row:1"));
+        QCOMPARE(nav(row(2), "right", 0, 5, 0, pairs), QStringLiteral("row:3"));
+        QCOMPARE(nav(row(3), "left", 0, 5, 0, pairs), QStringLiteral("row:2"));
+        // Lines that do not match the rows (a stale list) are not used.
+        QCOMPARE(nav(row(1), "down", 0, 5, 0, QStringLiteral("[0, 0]")), QStringLiteral("row:2"));
+        // The focused row past the end (rows shrank): clamped, then moved.
+        QCOMPARE(nav(row(9), "up", 0, 5, 0, pairs), QStringLiteral("row:2"));
     }
 
     void typingGoesToTheSearch()

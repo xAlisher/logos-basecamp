@@ -1,5 +1,6 @@
 #include "ShellApi.h"
 
+#include "AppSearch.h"
 #include "IntentRegistry.h"
 #include "MainUIBackend.h"
 #include "ObjectResults.h"
@@ -196,6 +197,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit appsChanged();
         emit homeQueryChanged();
         emit recentAppsChanged();
+        emit appResultsChanged();
     });
     connect(backend, &MainUIBackend::shellPreferencesChanged, this, &ShellApi::prefsChanged);
     connect(backend, &MainUIBackend::settingsSectionRequested, this, [this](const QString& section) {
@@ -215,6 +217,21 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
     connect(backend, &MainUIBackend::recentAppsChanged, this, [this]() {
         if (holds("home")) emit recentAppsChanged();
     });
+    // Gated like recentAppsChanged, and coalesced: the catalog's rows change
+    // with every download tick.
+    m_appResultsTimer = new QTimer(this);
+    m_appResultsTimer->setSingleShot(true);
+    m_appResultsTimer->setInterval(150);
+    connect(m_appResultsTimer, &QTimer::timeout, this, [this]() {
+        if (holds("home")) emit appResultsChanged();
+    });
+    connect(backend, &MainUIBackend::launcherAppsChanged, this, &ShellApi::scheduleAppResults);
+    if (QAbstractItemModel* model = backend->appsModel()) {
+        connect(model, &QAbstractItemModel::modelReset, this, &ShellApi::scheduleAppResults);
+        connect(model, &QAbstractItemModel::rowsInserted, this, &ShellApi::scheduleAppResults);
+        connect(model, &QAbstractItemModel::rowsRemoved, this, &ShellApi::scheduleAppResults);
+        connect(model, &QAbstractItemModel::dataChanged, this, &ShellApi::scheduleAppResults);
+    }
     // Search: to the holder the request was made of, and only while it holds
     // the role. objectsChanged is a clock of every app's publishing; only the
     // holder, which reads across apps anyway, hears it.
@@ -399,6 +416,99 @@ QVariantList ShellApi::recentApps() const
 void ShellApi::launch(const QString& name)
 {
     if (holds("home")) emit m_backend->homeLaunchRequested(name);
+}
+
+void ShellApi::scheduleAppResults()
+{
+    if (holds("home") && !m_appResultsTimer->isActive()) m_appResultsTimer->start();
+}
+
+namespace {
+
+// The catalog's rows, in the shape AppSearch::candidates reads.
+QVariantList catalogRows(QAbstractItemModel* model)
+{
+    QVariantList rows;
+    if (!model) return rows;
+    for (int i = 0; i < model->rowCount(); ++i) {
+        const QModelIndex ix = model->index(i, 0);
+        rows.append(QVariantMap{
+            { QStringLiteral("name"), ix.data(AppsModelRoles::NameRole) },
+            { QStringLiteral("displayName"), ix.data(AppsModelRoles::DisplayNameRole) },
+            { QStringLiteral("type"), ix.data(AppsModelRoles::TypeRole) },
+            { QStringLiteral("iconUrl"), ix.data(AppsModelRoles::IconUrlRole) },
+            { QStringLiteral("supportsFullBleedIcon"), ix.data(AppsModelRoles::SupportsFullBleedIconRole) },
+            { QStringLiteral("hasInstallableVersion"), ix.data(AppsModelRoles::HasInstallableVersionRole) },
+            { QStringLiteral("installStage"), ix.data(AppsModelRoles::InstallStageRole) },
+        });
+    }
+    return rows;
+}
+
+// A file the host can read for the row's icon (ADR-071: local only).
+bool isLocalIcon(const QString& source)
+{
+    if (source.isEmpty()) return false;
+    return source.startsWith(QStringLiteral("file:")) || source.startsWith(QStringLiteral("qrc:"))
+        || !source.contains(QStringLiteral("://"));
+}
+
+} // namespace
+
+QVariantList ShellApi::findApps(const QString& query)
+{
+    if (!holds("home")) return {};
+    if (query.trimmed().isEmpty()) return {};
+    // Apps not installed come from the catalog, fetched the first time
+    // anything needs it; its arrival is an appResultsChanged.
+    m_backend->requestCatalog();
+    const QVariantMap roles = m_backend->roles();
+    QStringList hidden;
+    for (const char* role : { "home", "search" }) {
+        const QString holder = roles.value(QLatin1String(role)).toString();
+        if (!holder.isEmpty()) hidden << holder;
+    }
+    const QList<AppSearch::Candidate> found = AppSearch::match(
+        AppSearch::candidates(m_backend->launcherApps(), catalogRows(m_backend->appsModel()), hidden),
+        query);
+    QVariantList rows;
+    for (const AppSearch::Candidate& c : found) {
+        rows.append(QVariantMap{
+            { QStringLiteral("name"), c.name },
+            { QStringLiteral("title"), c.title },
+            { QStringLiteral("icon"), isLocalIcon(c.icon)
+                  ? QStringLiteral("image://basecamp/appicon/") + c.name : QString() },
+            { QStringLiteral("fullBleed"), c.fullBleed },
+            { QStringLiteral("state"), c.state },
+        });
+    }
+    return rows;
+}
+
+void ShellApi::installApp(const QString& name)
+{
+    if (!holds("home") || name.isEmpty()) return;
+    for (const QVariant& v : m_backend->launcherApps()) {
+        if (v.toMap().value(QStringLiteral("name")).toString() == name) {
+            emit m_backend->homeLaunchRequested(name);
+            return;
+        }
+    }
+    // The first repository offering a version this host can install; the
+    // dialog then resolves and asks.
+    QString repositoryUrl;
+    if (QAbstractItemModel* model = m_backend->appsModel()) {
+        for (int i = 0; i < model->rowCount(); ++i) {
+            const QModelIndex ix = model->index(i, 0);
+            if (ix.data(AppsModelRoles::NameRole).toString() != name) continue;
+            if (ix.data(AppsModelRoles::TypeRole).toString() != QLatin1String("ui_qml")) continue;
+            if (!ix.data(AppsModelRoles::HasInstallableVersionRole).toBool()) continue;
+            repositoryUrl = ix.data(AppsModelRoles::RepositoryUrlRole).toString();
+            break;
+        }
+    }
+    if (repositoryUrl.isEmpty()) return;   // not something this host can install
+    m_backend->openApp(name, repositoryUrl, QVariantMap(), false);
 }
 
 void ShellApi::setBarPlaceholder(const QString& text)

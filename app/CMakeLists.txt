@@ -311,6 +311,7 @@ set(PROJECT_SOURCES
     ShellHostAdapter.cpp
 
     MainUIBackend.cpp
+    AppSearch.cpp
     NotificationCenter.cpp
     NotificationObjects.cpp
     ObjectStore.cpp

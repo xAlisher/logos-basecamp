@@ -10,12 +10,15 @@ import Basecamp.Objects
 import "BasecampHomeModules.js" as M
 
 // Basecamp's home page (the `home` role, ADR-067): what a New tab shows.
-// The bar's text searches both your apps and what apps share with Basecamp
+// The bar's text searches both apps and what apps share with Basecamp
 // (SHELL-OBJECTS-SPEC §7): pills narrow the objects by type or app; below,
 // either the feed (everything, newest first; the default) or the modules
-// (saved filters, a grid that is one column on a phone). Above them, Recent
-// apps: the ones closed or installed lately, newest first, then Applications,
-// Packages and Settings, which are apps like any other (basecamp-experiments#30).
+// (saved filters, a grid that is one column on a phone). Above them, with
+// nothing typed, Recent apps: the ones closed or installed lately, newest
+// first, then Applications, Packages and Settings, which are apps like any
+// other (basecamp-experiments#30). With a query, the Apps block instead: the
+// installed and catalog apps that match, one row each, Running or with an
+// Open or Install button (basecamp-experiments#32).
 // Picking a tile asks the shell to turn the current New tab into that app; a
 // card's actions go to the app that published it. It reads only `shell`, the
 // role-gated object the host injects.
@@ -83,17 +86,28 @@ Rectangle {
         return names
     }
 
-    function matches(label) {
-        return root.query.length === 0 || label.toLowerCase().indexOf(root.query) >= 0
+    // The Apps block: what shell.findApps answers for the bar's text, best
+    // first ({ name, title, icon, fullBleed, state }). Asked again when the
+    // text changes and when the host says the answer would differ (an app
+    // opened, closed or installed, the catalog arrived).
+    property var appHits: []
+    readonly property int maxAppHits: 5
+    function refreshApps() {
+        root.appHits = root.rawQuery.length > 0 ? (shell.findApps(root.rawQuery) || []) : []
     }
-    // With nothing typed, the row is Recent apps; typing searches every app.
-    readonly property var shownApps: root.query.length === 0
-        ? root.recentApps
-        : apps.filter(a => matches(a.displayName || a.name))
+    Connections {
+        target: shell
+        function onAppResultsChanged() { root.refreshApps() }
+    }
 
+    function openApp(hit) {
+        if (hit.state === "available") shell.installApp(hit.name)
+        else if (hit.state !== "installing") root.launchApp(hit.name)
+    }
+    // Enter: the first app found that is installed (never an install).
     function openFirst() {
-        if (root.query.length > 0 && shownApps.length > 0)
-            root.launchApp(shownApps[0].name)
+        const hit = root.appHits.find(a => a.state === "running" || a.state === "installed")
+        if (root.query.length > 0 && hit) root.launchApp(hit.name)
     }
 
     // ── objects ─────────────────────────────────────────────────────────
@@ -215,7 +229,7 @@ Rectangle {
         return rows
     }
 
-    onRawQueryChanged: refreshAll()
+    onRawQueryChanged: { refreshAll(); refreshApps() }
     onPillChanged: refreshPill()
     onViewChanged: if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     Connections {
@@ -289,6 +303,7 @@ Rectangle {
         search.textInput.cursorDelegate = calmCursor
         shell.setBarPlaceholder(root.barPlaceholder)
         root.refreshAll()
+        root.refreshApps()
         root.startVisit()
     }
 
@@ -441,18 +456,17 @@ Rectangle {
             color: Theme.palette.textSecondary
         }
 
-        // Recent apps, or with a query the apps that match, in one row that
-        // scrolls sideways.
+        // Recent apps, in one row that scrolls sideways.
         ListView {
             id: appRow
             objectName: "newTab.grid"
-            visible: root.pill === null && root.shownApps.length > 0
+            visible: root.pill === null && root.query.length === 0 && root.recentApps.length > 0
             width: parent.width
             height: visible ? root.tileSize + 48 : 0
             orientation: ListView.Horizontal
             clip: true
             boundsBehavior: Flickable.StopAtBounds
-            model: root.shownApps
+            model: root.recentApps
             delegate: Tile {
                 required property var modelData
                 objectName: "newTab.app." + modelData.name
@@ -474,9 +488,60 @@ Rectangle {
             font.pixelSize: Theme.typography.secondaryText
         }
 
+        // ── apps found (basecamp-experiments#32) ────────────────────────
+        Column {
+            id: appsBlock
+            objectName: "home.apps"
+            visible: root.pill === null && root.appHits.length > 0
+            // As wide as the search bar above it, so on a desktop the
+            // buttons stay near the names.
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(parent.width, 720)
+
+            Item {
+                width: parent.width
+                height: Theme.minTouchTarget
+
+                LogosText {
+                    objectName: "home.apps.title"
+                    anchors.left: parent.left
+                    anchors.verticalCenter: parent.verticalCenter
+                    text: qsTr("Apps")
+                    font.pixelSize: Theme.typography.secondaryText
+                    font.weight: Font.Medium
+                    color: Theme.palette.textSecondary
+                }
+
+                LogosLink {
+                    objectName: "home.apps.all"
+                    anchors.right: parent.right
+                    anchors.verticalCenter: parent.verticalCenter
+                    // The whole header's height is the tap target, text centred.
+                    width: Math.max(Theme.minTouchTarget, labelItem.implicitWidth + 2 * Theme.spacing.small)
+                    height: Theme.minTouchTarget
+                    leftPadding: (width - labelItem.implicitWidth) / 2
+                    rightPadding: leftPadding
+                    topPadding: Math.max(0, (height - labelItem.implicitHeight) / 2)
+                    bottomPadding: topPadding
+                    text: qsTr("All apps")
+                    underline: false
+                    onActivated: shell.openRole("launcher")
+                }
+            }
+
+            Repeater {
+                model: root.appHits.slice(0, root.maxAppHits)
+                delegate: AppRow {
+                    required property var modelData
+                    width: appsBlock.width
+                    hit: modelData
+                }
+            }
+        }
+
         LogosText {
             objectName: "home.nothing"
-            visible: root.query.length > 0 && root.shownApps.length === 0 && root.allRows.length === 0
+            visible: root.query.length > 0 && root.appHits.length === 0 && root.allRows.length === 0
             width: parent.width
             wrapMode: Text.Wrap
             text: qsTr("Nothing matches “%1”.").arg(root.rawQuery)
@@ -615,6 +680,97 @@ Rectangle {
         }
 
     }
+    }
+
+    // One app in the Apps block: icon (letters when there is no local one),
+    // name, and on the right what it is: Running, or Open, or Install. The
+    // whole row does what the right side says; Running switches to it.
+    component AppRow: AbstractButton {
+        id: appRowItem
+
+        property var hit: ({})
+        readonly property string appState: hit.state || ""
+
+        objectName: "home.app." + (hit.name || "")
+        height: 56
+        hoverEnabled: true
+        Accessible.name: hit.title || hit.name || ""
+        Accessible.description: stateLabel.visible ? stateLabel.text : actionButton.text
+        onClicked: root.openApp(hit)
+
+        background: Rectangle {
+            radius: Theme.spacing.radiusMedium
+            color: appRowItem.pressed ? Theme.palette.backgroundTertiary
+                 : appRowItem.hovered ? Theme.palette.backgroundSecondary : "transparent"
+        }
+
+        LogosTile {
+            id: appIcon
+            anchors.left: parent.left
+            anchors.leftMargin: Theme.spacing.tiny
+            anchors.verticalCenter: parent.verticalCenter
+            label: appRowItem.hit.title || appRowItem.hit.name || ""
+            source: appRowItem.hit.icon || ""
+            tileSize: 40
+            radius: Theme.spacing.radiusMedium
+            fallbackColor: Theme.palette.surfaceRaised
+            insetArtwork: appRowItem.hit.fullBleed !== true
+            interactive: false
+            implicitWidth: 40
+            implicitHeight: 40
+            padding: 0
+            topInset: 0
+            bottomInset: 0
+            leftInset: 0
+            rightInset: 0
+            Accessible.ignored: true
+        }
+
+        LogosText {
+            anchors.left: appIcon.right
+            anchors.leftMargin: Theme.spacing.medium
+            anchors.right: rowEnd.left
+            anchors.rightMargin: Theme.spacing.medium
+            anchors.verticalCenter: parent.verticalCenter
+            elide: Text.ElideRight
+            text: appRowItem.hit.title || appRowItem.hit.name || ""
+            color: Theme.palette.text
+        }
+
+        Item {
+            id: rowEnd
+            anchors.right: parent.right
+            anchors.rightMargin: Theme.spacing.tiny
+            anchors.verticalCenter: parent.verticalCenter
+            width: stateLabel.visible ? stateLabel.implicitWidth : actionButton.width
+            height: Theme.minTouchTarget
+
+            LogosText {
+                id: stateLabel
+                objectName: "home.app.state." + (appRowItem.hit.name || "")
+                visible: appRowItem.appState === "running" || appRowItem.appState === "installing"
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                text: appRowItem.appState === "running" ? qsTr("Running") : qsTr("Installing…")
+                font.pixelSize: Theme.typography.secondaryText
+                color: Theme.palette.textSecondary
+            }
+
+            LogosButton {
+                id: actionButton
+                objectName: "home.app.action." + (appRowItem.hit.name || "")
+                visible: !stateLabel.visible
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Theme.minTouchTarget
+                width: Math.max(implicitWidth, 88)
+                text: appRowItem.appState === "available" ? qsTr("Install") : qsTr("Open")
+                variant: appRowItem.appState === "available" ? LogosButton.Variant.Primary
+                                                           : LogosButton.Variant.Secondary
+                Accessible.name: qsTr("%1 %2").arg(text).arg(appRowItem.hit.title || appRowItem.hit.name || "")
+                onClicked: root.openApp(appRowItem.hit)
+            }
+        }
     }
 
     component Tile: AbstractButton {

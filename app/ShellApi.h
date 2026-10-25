@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QPointer>
+#include <QTimer>
 #include <QString>
 #include <QVariantList>
 #include <QVariantMap>
@@ -152,6 +153,17 @@ public:
 
     // home: turn the New tab this page is shown in into `name`.
     Q_INVOKABLE void launch(const QString& name);
+    // home: the apps matching `query` for its Apps block (basecamp-experiments#32),
+    // installed and catalog ones, best first (AppSearch.h): [{ name, title,
+    // icon, fullBleed, state }], state "running" | "installed" | "installing" |
+    // "available". icon is served by the host and only for a local file, ""
+    // otherwise (draw letters). The first query fetches the catalog; asked
+    // again on appResultsChanged.
+    Q_INVOKABLE QVariantList findApps(const QString& query);
+    // home: install an app found by findApps, through the shell's own install
+    // dialog (nothing is installed without it). The host picks the repository.
+    // An installed app opens instead.
+    Q_INVOKABLE void installApp(const QString& name);
     // home: what the shell's bar reads while it searches this page, naming
     // the active filter ("Search transactions"); "" gives the shell's own back.
     // Plain text, one line, at most 60 characters.
@@ -197,6 +209,9 @@ signals:
     void launcherSearchRequested(const QString& query);
     void homeQueryChanged();
     void recentAppsChanged();
+    // home: findApps would answer differently (an app opened, closed,
+    // installed or removed, the catalog arrived). Coalesced.
+    void appResultsChanged();
     // Enter in the shell's bar while home is shown: open the first result.
     void homeQueryAccepted();
     // search: a view wants results; answer(requestId, ids) within 500 ms or
@@ -210,6 +225,9 @@ private:
     bool holdsAny() const;
     bool isView() const { return holds("home") || holds("launcher"); }
 
+    void scheduleAppResults();
+
     QPointer<MainUIBackend> m_backend;
     QString m_app;
+    QTimer* m_appResultsTimer = nullptr;
 };

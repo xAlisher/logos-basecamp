@@ -556,6 +556,89 @@ private slots:
         QCOMPARE(cells("withoutHidden(mine, [])"), cells("mine"));
     }
 
+    // ── edit mode (basecamp-experiments#51) ─────────────────────────────
+
+    // A card dragged below its neighbour stays below it: the neighbour
+    // moves up past it, where a plain compact would lift the card back.
+    void gridDragDown()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l1 = migrateLayout(mods, 1)");
+        QCOMPARE(cells("place(l1, 'transactions', 0, 4)"),
+                 QStringLiteral("messages@0,0 1x3 | transactions@0,3 1x4 | communities@0,7 1x3"
+                                " | wallet@0,10 1x2 | news@0,12 1x2"));
+        // Dragged past two: both move up.
+        QCOMPARE(hs("readingOrder(place(l1, 'transactions', 0, 7).blocks).map(b => b.id).join(',')"),
+                 QStringLiteral("messages,communities,transactions,wallet,news"));
+        // Not yet past the next one's top: it lands back where it was.
+        QCOMPARE(cells("place(l1, 'transactions', 0, 2)"), cells("l1"));
+        // Up works as before: Messages to the top pushes Transactions down.
+        QCOMPARE(hs("readingOrder(place(l1, 'messages', 0, 0).blocks).map(b => b.id).join(',')"),
+                 QStringLiteral("messages,transactions,communities,wallet,news"));
+        // On four columns, News (a strip) dragged to the top and back down.
+        h("var l4 = migrateLayout(mods, 4)");
+        h("var top = place(l4, 'news', 0, 0)");
+        QCOMPARE(hs("readingOrder(top.blocks)[0].id"), QStringLiteral("news"));
+        QCOMPARE(cells("place(top, 'news', 0, 6)"), cells("l4"));
+        // closeUpAround keeps the held card where it is.
+        QCOMPARE(cells("closeUpAround({ columns: 1, blocks: [{ id: 'a', x: 0, y: 4, w: 1, h: 2 },"
+                       " { id: 'b', x: 0, y: 7, w: 1, h: 3 }] }, 'a')"),
+                 QStringLiteral("b@0,0 1x3 | a@0,4 1x2"));
+    }
+
+    void gridDropCell()
+    {
+        // pitch 400 x 136: a card held at (390, 300) lands on cell (1, 2).
+        QCOMPARE(hs("JSON.stringify(dropCell(390, 300, 400, 136, 3, 1))"), QStringLiteral("{\"x\":1,\"y\":2}"));
+        // Clamped in: never left of 0, never past the right for its width.
+        QCOMPARE(hs("JSON.stringify(dropCell(-90, -40, 400, 136, 3, 1))"), QStringLiteral("{\"x\":0,\"y\":0}"));
+        QCOMPARE(hs("JSON.stringify(dropCell(1190, 0, 400, 136, 3, 2))"), QStringLiteral("{\"x\":1,\"y\":0}"));
+        // One column: up and down only.
+        QCOMPARE(hs("JSON.stringify(dropCell(250, 700, 366, 136, 1, 1))"), QStringLiteral("{\"x\":0,\"y\":5}"));
+    }
+
+    void gridAutoScroll()
+    {
+        QCOMPARE(h("autoScrollStep(400, 800, 16)").toInt(), 0);
+        QVERIFY(h("autoScrollStep(10, 800, 16)").toInt() < 0);
+        QVERIFY(h("autoScrollStep(790, 800, 16)").toInt() > 0);
+        // Faster the closer to the edge, at most maxStep.
+        QVERIFY(h("autoScrollStep(5, 800, 16)").toInt() < h("autoScrollStep(50, 800, 16)").toInt());
+        QCOMPARE(h("autoScrollStep(-40, 800, 16)").toInt(), -16);
+        QCOMPARE(h("autoScrollStep(900, 800, 16)").toInt(), 16);
+        // A short view still has a middle that does not scroll.
+        QCOMPARE(h("autoScrollStep(50, 100, 16)").toInt(), 0);
+    }
+
+    // What home saves through the shell, and what it makes of what comes back.
+    void homeSettingsRoundTrip()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var mine = { 4: place(migrateLayout(mods, 4), 'messages', 0, 0) }");
+        h("var back = fromSettings(JSON.parse(JSON.stringify(settingsOf(removeModule(mods, 'news'), mine))))");
+        QCOMPARE(hs("back.modules.map(m => m.id).join(',')"),
+                 QStringLiteral("transactions,messages,communities,wallet"));
+        QCOMPARE(cells("layoutFor(back.layouts, 4, back.modules)"),
+                 cells("layoutFor(mine, 4, removeModule(mods, 'news'))"));
+        // Nothing saved, another version or junk: the defaults, no layouts.
+        for (const char* junk : { "undefined", "null", "7", "({})", "({ version: 2, modules: [] })" }) {
+            QCOMPARE(hs(QStringLiteral("fromSettings(%1).modules.length").arg(junk)), QStringLiteral("5"));
+            QCOMPARE(hs(QStringLiteral("Object.keys(fromSettings(%1).layouts).length").arg(junk)), QStringLiteral("0"));
+        }
+        // Every module removed stays so.
+        QCOMPARE(hs("fromSettings({ version: 1, modules: [] }).modules.length"), QStringLiteral("0"));
+        // Bad modules and layouts are dropped: no id, a duplicate, past
+        // kMaxModules, a column count home never has.
+        h("var many = []; for (var i = 0; i < 12; ++i) many.push({ id: 'm' + i, name: 'M' + i })");
+        QCOMPARE(hs("fromSettings({ version: 1, modules: many }).modules.length"), QStringLiteral("7"));
+        QCOMPARE(hs("fromSettings({ version: 1, modules: [{ name: 'x' }, { id: 'a', name: 'A' },"
+                    " { id: 'a', name: 'B' }, 3] }).modules.map(m => m.name).join(',')"),
+                 QStringLiteral("A"));
+        QCOMPARE(hs("Object.keys(fromSettings({ version: 1, layouts: { 2: { columns: 2, blocks: [] },"
+                    " 9: {}, x: {}, 3: 'no' } }).layouts).join(',')"),
+                 QStringLiteral("2"));
+    }
+
     // ── keyboard (basecamp-experiments#48) ──────────────────────────────
 
     void keyboardNavigation()

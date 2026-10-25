@@ -11,8 +11,10 @@ import "BasecampHomeModules.js" as M
 // One home module (SHELL-OBJECTS-SPEC §7): a saved filter and the objects it
 // finds, drawn as one-line rows (small), cards (medium, large) or a sideways
 // strip of cards (row). Its own live results from `shell.search`, narrowed by
-// the bar's text and the pill; hidden while it finds nothing. Home's grid
-// gives it its place and size (its block of cells).
+// the bar's text and the pill; hidden while it finds nothing, except in edit
+// mode. Home's grid gives it its place and size (its block of cells).
+// A long press on its header asks for edit mode (basecamp-experiments#51);
+// in edit mode its cards are inert and home's grid moves it.
 //
 // (File names here start with BasecampHome: two ui_qml apps shipping a file
 // of the same name collide, spec §11.)
@@ -32,6 +34,9 @@ Rectangle {
     // each one ranks the whole store on every keystroke and every store
     // change, for nothing in the feed view (basecamp-experiments#27).
     property bool live: false
+    // Home's edit mode (#51): shown even when empty, its cards inert, the
+    // menu gives way to the grid's drag handle.
+    property bool editing: false
 
     signal changeRequested(var change)
     signal removeRequested()
@@ -41,6 +46,8 @@ Rectangle {
     // Its results are about to go (it stopped being live): what home noted
     // from them must be marked first, while they still hold it.
     signal releasing()
+    // A long press on the header: home's edit mode.
+    signal editRequested()
 
     readonly property var filter: M.effectiveFilter(mod.module.filter, mod.pill)
     readonly property string query: M.joinQuery(mod.module.query, mod.barQuery)
@@ -57,7 +64,7 @@ Rectangle {
     // Something to show; home's grid takes the cells of one without
     // (basecamp-experiments#50).
     readonly property bool hasContent: mod.filter !== null && mod.rows.length > 0
-    visible: mod.hasContent
+    visible: mod.hasContent || mod.editing
     implicitHeight: visible ? content.implicitHeight + 2 * Theme.spacing.medium : 0
     // Home's grid sizes it by its block; what does not fit stays inside.
     clip: true
@@ -159,6 +166,16 @@ Rectangle {
             width: parent.width
             height: Theme.minTouchTarget
 
+            // Long press (500 ms) for edit mode. Under the menu button, and
+            // it lets the page take a drag, so the header still scrolls.
+            MouseArea {
+                objectName: mod.objectName + ".header"
+                anchors.fill: parent
+                enabled: !mod.editing
+                pressAndHoldInterval: 500
+                onPressAndHold: mod.editRequested()
+            }
+
             LogosText {
                 id: title
                 textFormat: Text.PlainText
@@ -196,6 +213,7 @@ Rectangle {
             LogosIconButton {
                 id: menuButton
                 objectName: mod.objectName + ".menu"
+                visible: !mod.editing
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 size: Theme.minTouchTarget
@@ -206,9 +224,21 @@ Rectangle {
             }
         }
 
+        // Edit mode keeps an empty module on the grid; it says why it is empty.
+        LogosText {
+            objectName: mod.objectName + ".empty"
+            visible: mod.editing && !mod.hasContent
+            width: parent.width
+            wrapMode: Text.Wrap
+            text: qsTr("Nothing to show here right now.")
+            color: Theme.palette.textTertiary
+            font.pixelSize: Theme.typography.secondaryText
+        }
+
         // small: one-line rows.
         Column {
             visible: mod.size === "small"
+            enabled: !mod.editing
             width: parent.width
             spacing: Theme.spacing.tiny
             Repeater {
@@ -233,6 +263,7 @@ Rectangle {
         Flow {
             id: cards
             visible: mod.size === "medium" || mod.size === "large"
+            enabled: !mod.editing
             readonly property int columns: mod.size === "large" && width >= 600 ? 2 : 1
             width: parent.width
             spacing: Theme.spacing.small
@@ -256,6 +287,7 @@ Rectangle {
         ListView {
             id: strip
             visible: mod.size === "row"
+            enabled: !mod.editing
             width: parent.width
             height: visible ? stripHeight : 0
             readonly property real cardWidth: Math.min(300, width - Theme.spacing.xlarge)

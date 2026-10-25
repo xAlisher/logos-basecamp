@@ -79,6 +79,10 @@ class ShellApi : public QObject {
     // installedApps' row shape plus recentKind ("closed" | "installed").
     // Empty on a fresh profile; home then shows the role apps.
     Q_PROPERTY(QVariantList recentApps READ recentApps NOTIFY recentAppsChanged)
+    // What home saved of its own with saveHomeSettings (its modules and their
+    // layout, basecamp-experiments#51); {} when nothing. This app's only:
+    // another home app starts from nothing.
+    Q_PROPERTY(QVariantMap homeSettings READ homeSettings NOTIFY homeSettingsChanged)
 
 public:
     ShellApi(MainUIBackend* backend, const QString& appName, QObject* parent = nullptr);
@@ -119,6 +123,7 @@ public:
     QString homeQuery() const;
     bool feedOnly() const;
     QVariantList recentApps() const;
+    QVariantMap homeSettings() const;
 
     // settings
     Q_INVOKABLE void refreshRepositories();
@@ -177,6 +182,10 @@ public:
     // the active filter ("Search transactions"); "" gives the shell's own back.
     // Plain text, one line, at most 60 characters.
     Q_INVOKABLE void setBarPlaceholder(const QString& text);
+    // home: keeps `settings` (a JSON object, at most 64 KB) across restarts,
+    // in place of what was saved. False when refused. Every view of the same
+    // app sees homeSettingsChanged.
+    Q_INVOKABLE bool saveHomeSettings(const QVariantMap& settings);
 
     // ── search (SHELL-OBJECTS-SPEC §5) ───────────────────────────────────
     // The envelopes `filter` allows ({ types?, apps?, kinds?, subjects?,
@@ -219,6 +228,7 @@ signals:
     void homeQueryChanged();
     void feedOnlyChanged();
     void recentAppsChanged();
+    void homeSettingsChanged();
     // home: findApps would answer differently (an app opened, closed,
     // installed or removed, the catalog arrived). Coalesced.
     void appResultsChanged();

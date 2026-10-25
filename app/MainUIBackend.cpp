@@ -33,6 +33,8 @@
 #include "UIPluginManager.h"
 #include "PackageCoordinator.h"
 #include "BuildInfo.h"
+#include "HomeSettingsStore.h"
+#include "utils/LogosBasecampPaths.h"
 
 #include <QDebug>
 #include <QJSValue>
@@ -817,6 +819,19 @@ void MainUIBackend::setHomePlaceholder(const QString& text)
     if (m_homePlaceholder == clean) return;
     m_homePlaceholder = clean;
     emit homePlaceholderChanged();
+}
+
+QVariantMap MainUIBackend::homeSettings(const QString& app) const
+{
+    return HomeSettingsStore(LogosBasecampPaths::baseDirectory() + "/home-settings.json").load(app);
+}
+
+bool MainUIBackend::setHomeSettings(const QString& app, const QVariantMap& settings)
+{
+    HomeSettingsStore store(LogosBasecampPaths::baseDirectory() + "/home-settings.json");
+    const HomeSettingsStore::Result r = store.save(app, settings);
+    if (r == HomeSettingsStore::Result::Saved) emit homeSettingsChanged(app);
+    return r != HomeSettingsStore::Result::Refused;
 }
 
 QString MainUIBackend::takePendingSettingsSection()

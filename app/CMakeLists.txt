@@ -338,6 +338,7 @@ set(PROJECT_SOURCES
     CoreModuleManager.cpp
     CoreDependencyLoader.cpp
     RecentlyClosedStore.cpp
+    HomeSettingsStore.cpp
     UIPluginManager.cpp
     PackageCoordinator.cpp
     RepositorySource.cpp

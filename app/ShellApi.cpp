@@ -204,6 +204,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit homeQueryChanged();
         emit feedOnlyChanged();
         emit recentAppsChanged();
+        emit homeSettingsChanged();
         emit appResultsChanged();
         emit relatedAppsChanged();
     });
@@ -222,6 +223,9 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
     });
     connect(backend, &MainUIBackend::homeFeedOnlyChanged, this, [this]() {
         if (holds("home")) emit feedOnlyChanged();
+    });
+    connect(backend, &MainUIBackend::homeSettingsChanged, this, [this](const QString& app) {
+        if (app == m_app && holds("home")) emit homeSettingsChanged();
     });
     // Gated: it moves when the user closes or installs an app, timing only the
     // holder may observe.
@@ -438,6 +442,16 @@ bool ShellApi::feedOnly() const { return holds("home") && m_backend->homeFeedOnl
 QVariantList ShellApi::recentApps() const
 {
     return holds("home") ? withServedIcons(m_backend->recentApps()) : QVariantList();
+}
+
+QVariantMap ShellApi::homeSettings() const
+{
+    return holds("home") ? m_backend->homeSettings(m_app) : QVariantMap();
+}
+
+bool ShellApi::saveHomeSettings(const QVariantMap& settings)
+{
+    return holds("home") && m_backend->setHomeSettings(m_app, settings);
 }
 
 void ShellApi::launch(const QString& name)

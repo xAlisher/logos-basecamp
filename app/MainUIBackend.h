@@ -291,6 +291,10 @@ public:
     // set by the home app; "" = the shell's own ("Search apps…").
     Q_INVOKABLE void setHomePlaceholder(const QString& text);
     Q_INVOKABLE QString homePlaceholder() const { return m_homePlaceholder; }
+    // What a home app keeps of its own (its modules and their layout,
+    // basecamp-experiments#51), stored by the shell for it (HomeSettingsStore).
+    QVariantMap homeSettings(const QString& app) const;
+    bool setHomeSettings(const QString& app, const QVariantMap& settings);
 
     // The shell's preferences object, handed over through IShellHost and given
     // only to the settings role's app (ShellApi).
@@ -452,6 +456,8 @@ signals:
     void homeQueryAccepted();
     void homeFeedOnlyChanged();
     void homePlaceholderChanged();
+    // `app`'s home settings were saved (from any of its views).
+    void homeSettingsChanged(const QString& app);
     // From the home app: the shell turns the New tab into this app / role.
     void homeLaunchRequested(const QString& name);
     void homeRoleRequested(const QString& role);

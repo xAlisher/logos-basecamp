@@ -29,8 +29,11 @@ import "BasecampHomeModules.js" as M
 // role-gated object the host injects.
 //
 // The modules (order, size, pin, notify, the custom ones) and their layout
-// on the grid live in memory only: home has no settings store of its own
-// yet, so a restart brings back the defaults.
+// on the grid are kept by the shell for home (shell.homeSettings, saved with
+// shell.saveHomeSettings), so a restart keeps them. The layout changes only
+// in edit mode (basecamp-experiments#51): Edit home, or a long press on a
+// module's header; a module then moves by dragging, Done saves and Cancel
+// or Esc puts back what was there before.
 Rectangle {
     id: root
 
@@ -49,7 +52,12 @@ Rectangle {
     // shell's own, with its own Esc (Back).
     // With a result focused from the keyboard (#48), Esc first takes the
     // focus back to the field, the text kept.
+    // In edit mode Esc cancels it first (#51).
     function escapeSearch() {
+        if (root.editing) {
+            root.cancelEdit()
+            return true
+        }
         if (root.searchInBar)
             return false
         if (root.resultFocused()) {
@@ -194,9 +202,20 @@ Rectangle {
         if (t) t.forceActiveFocus(Qt.TabFocusReason)
     }
     function navKey(event) {
-        if (root.searchInBar) return
         const f = root.focusedItem()
         if (!f || !root.within(f, root)) return
+        // Edit mode: Esc cancels it; the arrows and Enter stay out of the
+        // inert cards.
+        if (root.editing) {
+            if (event.key === Qt.Key_Escape) {
+                root.cancelEdit()
+                event.accepted = true
+                return
+            }
+            const nav = [Qt.Key_Up, Qt.Key_Down, Qt.Key_Left, Qt.Key_Right, Qt.Key_Return, Qt.Key_Enter]
+            if (nav.indexOf(event.key) >= 0 && !root.within(f, search)) return
+        }
+        if (root.searchInBar) return
         const inSearch = root.within(f, search)
         if (!inSearch && root.within(f, page) && M.typesText(event.text, event.modifiers)) {
             root.focusSearch()
@@ -383,11 +402,67 @@ Rectangle {
     // the sidebar's feed mode always shows the feed.
     property string chosenView: "feed"
     readonly property string view: root.feedOnly ? "feed" : root.chosenView
-    property var modules: M.defaultModules().map(M.sanitizeModule)
+    // As saved (M.fromSettings), else the defaults.
+    property var modules: M.fromSettings(shell.homeSettings).modules
     // The modules' places on the grid, one layout per column count it was
     // arranged at ({ "<columns>": layout }); none yet derives them from the
     // modules' old size and pin (M.layoutFor).
-    property var layouts: ({})
+    property var layouts: M.fromSettings(shell.homeSettings).layouts
+    onModulesChanged: root.saveSettings()
+    function saveSettings() {
+        if (!shell.saveHomeSettings(M.settingsOf(root.modules, root.layouts)))
+            console.warn("Home: the shell did not keep home's settings")
+    }
+    // Saved from another view of home (the overlay, another window): taken
+    // over unless this one is being arranged. The modules only when they
+    // differ, since new ones rebuild every module.
+    Connections {
+        target: shell
+        function onHomeSettingsChanged() {
+            if (root.editing) return
+            const s = M.fromSettings(shell.homeSettings)
+            if (JSON.stringify(s.layouts) !== JSON.stringify(root.layouts)) root.layouts = s.layouts
+            if (JSON.stringify(s.modules) !== JSON.stringify(root.modules)) root.modules = s.modules
+        }
+    }
+
+    // ── edit mode (basecamp-experiments#51) ───────────────────────────────
+    // The grid's layouts while arranging: a copy of `layouts` that each move
+    // writes for the current column count. Done keeps it, Cancel drops it.
+    property bool editing: false
+    property var draft: ({})
+    function startEdit() {
+        if (root.editing || root.feedOnly) return
+        root.draft = Object.assign({}, root.layouts)
+        root.chosenView = "grid"
+        root.editing = true
+        // The button pressed goes away: Done takes the focus, so Esc and
+        // Enter reach home.
+        Qt.callLater(() => { if (root.editing) editDone.forceActiveFocus(Qt.OtherFocusReason) })
+    }
+    function finishEdit() {
+        if (!root.editing) return
+        grid.endDrag()
+        root.layouts = root.draft
+        root.editing = false
+        root.saveSettings()
+    }
+    function cancelEdit() {
+        if (!root.editing) return
+        grid.endDrag()
+        root.editing = false
+        root.draft = ({})
+    }
+    // "Reset layout": the first layout for this column count, from the
+    // modules' old size and pin (M.migrateLayout); kept with Done.
+    function resetLayout() {
+        root.setDraft(M.migrateLayout(root.modules, grid.columns))
+    }
+    function setDraft(layout) {
+        const d = Object.assign({}, root.draft)
+        d[String(layout.columns)] = layout
+        root.draft = d
+    }
 
     // One live result for whether anything matches: the bar's text, no filter.
     property var allResults: null
@@ -421,7 +496,12 @@ Rectangle {
     readonly property bool onScreen: Window.window !== null && Window.window.visibility !== Window.Hidden
     // Deferred: the shell shows the view before it starts the visit
     // (clearSearch), and marking first would make the hidden visit "seen".
-    onOnScreenChanged: if (root.onScreen) Qt.callLater(root.noteFeedShown)
+    // Leaving home while arranging it (another tab, the overlay closed)
+    // cancels; the edit bar says so.
+    onOnScreenChanged: {
+        if (root.onScreen) Qt.callLater(root.noteFeedShown)
+        else root.cancelEdit()
+    }
     function noteFeedShown() {
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
@@ -509,7 +589,10 @@ Rectangle {
 
     onRawQueryChanged: { flushMarks(); refreshAll(); refreshApps() }
     onPillChanged: { flushMarks(); refreshPill() }
-    onViewChanged: if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
+    onViewChanged: {
+        if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
+        if (root.view !== "grid") root.cancelEdit()
+    }
     Connections {
         target: root.allResults
         function onResultsChanged() { root.rebuildAll() }
@@ -650,7 +733,7 @@ Rectangle {
             LogosIconButton {
                 id: viewToggle
                 objectName: "home.viewToggle"
-                visible: !root.feedOnly
+                visible: !root.feedOnly && !root.editing
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
                 width: visible ? Theme.minTouchTarget : 0
@@ -668,7 +751,7 @@ Rectangle {
     Rectangle {
         id: pillDock
         objectName: "home.pillDock"
-        visible: root.hasPills && root.pillsAtBottom
+        visible: root.hasPills && root.pillsAtBottom && !root.editing
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
@@ -691,11 +774,99 @@ Rectangle {
         }
     }
 
+    // Edit mode's bar (#51), docked on the page's bottom edge (on a phone in
+    // place of the pills): what to do, Reset layout, Cancel and Done.
+    Rectangle {
+        id: editBar
+        objectName: "home.editBar"
+        visible: root.editing
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: barBody.height + 2 * Theme.spacing.small
+        color: Theme.palette.backgroundElevated
+        z: 3
+
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: Theme.palette.borderHairline
+        }
+
+        Item {
+            id: barBody
+            x: root.sideMargin
+            y: Theme.spacing.small
+            width: parent.width - 2 * root.sideMargin
+            // A phone puts the words above the buttons.
+            height: root.compact ? editHint.implicitHeight + Theme.spacing.tiny + Theme.minTouchTarget
+                                 : Math.max(Theme.minTouchTarget, editHint.implicitHeight)
+
+            LogosText {
+                id: editHint
+                objectName: "home.editBar.hint"
+                anchors.left: parent.left
+                anchors.right: root.compact ? parent.right : editButtons.left
+                anchors.rightMargin: root.compact ? 0 : Theme.spacing.medium
+                y: root.compact ? 0 : (parent.height - height) / 2
+                wrapMode: Text.Wrap
+                text: qsTr("Drag a module to move it. Changes are kept when you press Done.")
+                color: Theme.palette.textSecondary
+                font.pixelSize: Theme.typography.secondaryText
+            }
+
+            Row {
+                id: editButtons
+                anchors.right: parent.right
+                anchors.bottom: parent.bottom
+                spacing: Theme.spacing.small
+
+                LogosButton {
+                    objectName: "home.edit.reset"
+                    height: Theme.minTouchTarget
+                    text: qsTr("Reset layout")
+                    onClicked: root.resetLayout()
+                }
+                LogosButton {
+                    objectName: "home.edit.cancel"
+                    height: Theme.minTouchTarget
+                    text: qsTr("Cancel")
+                    onClicked: root.cancelEdit()
+                }
+                LogosButton {
+                    id: editDone
+                    objectName: "home.edit.done"
+                    height: Theme.minTouchTarget
+                    text: qsTr("Done")
+                    variant: LogosButton.Variant.Primary
+                    onClicked: root.finishEdit()
+                    Keys.onReturnPressed: root.finishEdit()
+                    Keys.onEnterPressed: root.finishEdit()
+                }
+            }
+        }
+    }
+
+    // A module held near the top or bottom edge scrolls the page (#51).
+    Timer {
+        interval: 16
+        repeat: true
+        running: grid.dragId.length > 0
+        onTriggered: {
+            const step = M.autoScrollStep(grid.pointer.y, scroll.height, 16)
+            if (step === 0) return
+            const y = Math.max(0, Math.min(scroll.contentY + step, scroll.contentHeight - scroll.height))
+            if (y === scroll.contentY) return
+            scroll.contentY = y
+            grid.follow()
+        }
+    }
+
     Flickable {
         id: scroll
         objectName: "home.scroll"
         anchors.fill: parent
-        anchors.bottomMargin: pillDock.visible ? pillDock.height : 0
+        anchors.bottomMargin: editBar.visible ? editBar.height : pillDock.visible ? pillDock.height : 0
         contentWidth: width
         contentHeight: page.implicitHeight
         clip: true
@@ -856,6 +1027,40 @@ Rectangle {
         // cells of its block in the layout for that column count
         // (M.layoutFor). A width change only switches layouts, it saves none.
         // Wider than the page's column on a big screen, so four columns fit.
+        //
+        // Edit mode (#51): every module shows, outlined, its cards inert. A
+        // press and drag on one lifts it: it follows the pointer, a ghost
+        // marks the cell it lands on and the others make room as it goes
+        // (M.place on the layout from before the press). Near the top or
+        // bottom edge the page scrolls. On a phone only the header drags a
+        // module, so the rest of it still scrolls the page.
+
+        // Wide screens: the grid's own heading, with Edit home beside it.
+        Item {
+            objectName: "home.grid.heading"
+            visible: grid.visible && !root.compact
+            width: parent.width
+            height: visible ? Theme.minTouchTarget : 0
+
+            LogosText {
+                anchors.left: parent.left
+                anchors.verticalCenter: parent.verticalCenter
+                text: qsTr("Modules")
+                font.pixelSize: Theme.typography.secondaryText
+                font.weight: Font.Medium
+                color: Theme.palette.textSecondary
+            }
+            LogosButton {
+                objectName: "home.grid.edit.top"
+                visible: !root.editing
+                anchors.right: parent.right
+                anchors.verticalCenter: parent.verticalCenter
+                height: Theme.minTouchTarget
+                text: qsTr("Edit home")
+                onClicked: root.startEdit()
+            }
+        }
+
         Item {
             id: grid
             objectName: "home.grid"
@@ -867,9 +1072,12 @@ Rectangle {
             readonly property int rowHeight: M.kRowHeight
             readonly property int columns: M.columnsFor(width)
             readonly property real columnWidth: (width - (columns - 1) * gap) / columns
-            // Edit mode (#51): every module keeps its cells, the empty ones too.
-            property bool editing: false
-            readonly property var layout: M.layoutFor(root.layouts, grid.columns, root.modules)
+            readonly property real pitchX: columnWidth + gap
+            readonly property real pitchY: rowHeight + gap
+            // Edit mode: every module keeps its cells, the empty ones too.
+            readonly property bool editing: root.editing
+            readonly property var layout: M.layoutFor(root.editing ? root.draft : root.layouts,
+                                                      grid.columns, root.modules)
             // The modules that find nothing: outside edit mode they give up
             // their cells, as a hidden module took no room before.
             property var hiddenIds: []
@@ -878,7 +1086,63 @@ Rectangle {
             readonly property int shownCount: grid.visibleLayout.blocks.length
             readonly property real gridHeight: {
                 const rows = M.rowsOf(grid.shown)
-                return rows > 0 ? rows * (grid.rowHeight + grid.gap) - grid.gap : 0
+                // While a module is held, room below it for where it is.
+                const held = grid.dragId.length > 0 ? grid.dragY + grid.dragH : 0
+                return Math.max(rows > 0 ? rows * grid.pitchY - grid.gap : 0, held)
+            }
+
+            // The module held in edit mode: its id, its top left and size in
+            // px as the pointer leaves it, where it was taken (in it), the
+            // pointer in `scroll`'s coordinates, and the layout from before
+            // the press that every move starts from.
+            property string dragId: ""
+            property real dragX: 0
+            property real dragY: 0
+            property real dragW: 0
+            property real dragH: 0
+            property point grabAt: Qt.point(0, 0)
+            property point pointer: Qt.point(0, 0)
+            property var dragBase: null
+            property string dropKey: ""
+
+            function beginMove(id, card, at) {
+                if (!grid.editing) return
+                grid.dragBase = grid.layout
+                grid.grabAt = at
+                grid.dragX = card.x
+                grid.dragY = card.y
+                grid.dragW = card.width
+                grid.dragH = card.height
+                grid.dropKey = ""
+                grid.dragId = id
+            }
+            function dragTo(p) {
+                grid.pointer = p
+                grid.follow()
+            }
+            // Puts the held module under the pointer and, when that changes
+            // the cell it would land on, the others where they make room.
+            function follow() {
+                if (grid.dragId.length === 0) return
+                const g = scroll.mapToItem(grid, grid.pointer.x, grid.pointer.y)
+                grid.dragX = grid.columns <= 1 ? 0
+                           : Math.max(0, Math.min(grid.width - grid.dragW, g.x - grid.grabAt.x))
+                // No further down than under the last module: the page stops
+                // growing (and scrolling) there.
+                grid.dragY = Math.max(0, Math.min(M.rowsOf(grid.dragBase) * grid.pitchY, g.y - grid.grabAt.y))
+                const b = M.blockFor(grid.dragBase, grid.dragId)
+                if (!b) return
+                const c = M.dropCell(grid.dragX, grid.dragY, grid.pitchX, grid.pitchY, grid.columns, b.w)
+                const key = c.x + "," + c.y
+                if (key === grid.dropKey) return
+                grid.dropKey = key
+                root.setDraft(M.place(grid.dragBase, grid.dragId, c.x, c.y))
+            }
+            // The module lands where its ghost is: the draft already has it.
+            function endDrag() {
+                grid.dragId = ""
+                grid.dragBase = null
+                grid.dropKey = ""
             }
 
             function noteHidden() {
@@ -902,6 +1166,22 @@ Rectangle {
                 onTriggered: grid.animate = grid.visible
             }
 
+            // Where the held module lands.
+            Rectangle {
+                objectName: "home.grid.ghost"
+                readonly property var block: grid.dragId.length > 0 ? M.blockFor(grid.layout, grid.dragId) : null
+                visible: block !== null
+                x: block ? block.x * grid.pitchX : 0
+                y: block ? block.y * grid.pitchY : 0
+                width: block ? block.w * grid.columnWidth + (block.w - 1) * grid.gap : 0
+                height: block ? block.h * grid.rowHeight + (block.h - 1) * grid.gap : 0
+                radius: Theme.spacing.radiusXlarge
+                color: Theme.palette.backgroundSecondary
+                border.width: 2
+                border.color: Theme.palette.accentOrange
+                opacity: 0.6
+            }
+
             Repeater {
                 id: moduleRepeater
                 model: root.modules
@@ -909,15 +1189,18 @@ Rectangle {
                     id: cardItem
                     required property var modelData
                     readonly property var block: M.blockFor(grid.shown, modelData.id)
+                    readonly property bool held: grid.dragId === modelData.id
                     module: modelData
-                    x: block ? block.x * (grid.columnWidth + grid.gap) : 0
-                    y: block ? block.y * (grid.rowHeight + grid.gap) : 0
+                    editing: grid.editing
+                    z: held ? 2 : 1
+                    x: held ? grid.dragX : block ? block.x * grid.pitchX : 0
+                    y: held ? grid.dragY : block ? block.y * grid.pitchY : 0
                     width: block ? block.w * grid.columnWidth + (block.w - 1) * grid.gap : grid.columnWidth
                     height: block ? block.h * grid.rowHeight + (block.h - 1) * grid.gap : 0
-                    Behavior on x { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                    Behavior on y { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                    Behavior on width { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
-                    Behavior on height { enabled: grid.animate; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on x { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on y { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on width { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
+                    Behavior on height { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     barQuery: root.rawQuery
                     pill: root.pill
                     // Searching only while the modules show (#27).
@@ -931,15 +1214,30 @@ Rectangle {
                     onRaiseRequested: (id, action, text) => root.raise(id, action, text)
                     onChangeRequested: change => root.modules = M.updateModule(root.modules, modelData.id, change)
                     onRemoveRequested: root.modules = M.removeModule(root.modules, modelData.id)
+                    onEditRequested: root.startEdit()
+
+                    EditFrame {
+                        anchors.fill: parent
+                        card: cardItem
+                    }
                 }
                 onItemAdded: Qt.callLater(grid.noteHidden)
                 onItemRemoved: Qt.callLater(grid.noteHidden)
             }
         }
 
+        LogosButton {
+            objectName: "home.grid.edit"
+            visible: grid.visible && !root.editing
+            anchors.horizontalCenter: parent.horizontalCenter
+            height: Theme.minTouchTarget
+            text: qsTr("Edit home")
+            onClicked: root.startEdit()
+        }
+
         LogosText {
             objectName: "home.grid.empty"
-            visible: grid.visible && grid.shownCount === 0
+            visible: grid.visible && grid.shownCount === 0 && !root.editing
             width: parent.width
             wrapMode: Text.Wrap
             text: qsTr("None of your modules has anything here. The feed shows everything.")
@@ -949,7 +1247,7 @@ Rectangle {
 
         LogosButton {
             objectName: "home.addModule"
-            visible: root.view === "grid" && root.allRows.length > 0 && root.withCustom !== null
+            visible: root.view === "grid" && root.allRows.length > 0 && root.withCustom !== null && !root.editing
             anchors.horizontalCenter: parent.horizontalCenter
             text: qsTr("Add “%1” as a module").arg(root.customName)
             width: Math.min(implicitWidth, parent.width)
@@ -1008,6 +1306,80 @@ Rectangle {
         }
 
     }
+    }
+
+    // A module's edit mode layer (#51): its outline, the drag handle drawn
+    // where its menu was, and what takes the press to move it.
+    component EditFrame: Item {
+        id: frame
+
+        property Item card: null
+        readonly property string modId: frame.card ? frame.card.module.id : ""
+        readonly property string modName: frame.card ? frame.card.module.name : ""
+        readonly property bool held: frame.card !== null && frame.card.held
+        // The header's height, as BasecampHomeModule lays it out.
+        readonly property real headerBottom: Theme.spacing.medium + Theme.minTouchTarget
+
+        visible: grid.editing
+        z: 10
+
+        Rectangle {
+            anchors.fill: parent
+            radius: Theme.spacing.radiusXlarge
+            color: "transparent"
+            border.width: frame.held ? 2 : 1
+            border.color: frame.held ? Theme.palette.accentOrange : Theme.palette.borderStrong
+        }
+
+        MouseArea {
+            id: mover
+            objectName: "home.module." + frame.modName + ".move"
+            anchors.fill: parent
+            enabled: grid.editing
+            cursorShape: frame.held ? Qt.ClosedHandCursor : Qt.OpenHandCursor
+            property bool moving: false
+            // A phone drags by the header only: the rest still scrolls the page.
+            onPressed: mouse => {
+                mover.moving = !root.compact || mouse.y < frame.headerBottom
+                mover.preventStealing = mover.moving
+                if (mover.moving) grid.beginMove(frame.modId, frame.card, Qt.point(mouse.x, mouse.y))
+            }
+            onPositionChanged: mouse => {
+                if (mover.moving) grid.dragTo(mover.mapToItem(scroll, mouse.x, mouse.y))
+            }
+            onReleased: mover.stop()
+            onCanceled: mover.stop()
+            function stop() {
+                if (mover.moving) grid.endDrag()
+                mover.moving = false
+            }
+        }
+
+        // The drag handle: six dots in the header's right corner.
+        Item {
+            objectName: "home.module." + frame.modName + ".handle"
+            x: frame.width - Theme.spacing.medium - width
+            y: Theme.spacing.medium
+            width: Theme.minTouchTarget
+            height: Theme.minTouchTarget
+            Accessible.role: Accessible.Grip
+            Accessible.name: qsTr("Move %1").arg(frame.modName)
+
+            Grid {
+                anchors.centerIn: parent
+                columns: 2
+                spacing: 4
+                Repeater {
+                    model: 6
+                    Rectangle {
+                        width: 4
+                        height: 4
+                        radius: 2
+                        color: frame.held ? Theme.palette.accentOrange : Theme.palette.textSecondary
+                    }
+                }
+            }
+        }
     }
 
     // One app in the Apps block: icon (letters when there is no local one),

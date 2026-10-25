@@ -348,8 +348,31 @@ function compact(layout) {
     return { columns: layout.columns, blocks: inOrderOf(layout.blocks, placed) }
 }
 
+// `holdId` stays where it is; every other card, in reading order, takes the
+// highest free place in its own columns, above the held card too, but not
+// above the card before it (so the others keep their order). A card dragged
+// below its neighbour thus stays there and the neighbour moves up past it
+// (#51), where compact alone would lift the dragged card straight back.
+function closeUpAround(layout, holdId) {
+    var placed = []
+    for (var h = 0; h < layout.blocks.length; ++h)
+        if (layout.blocks[h].id === holdId) placed.push(clampBlock(layout.blocks[h], layout.columns))
+    var order = readingOrder(layout.blocks)
+    var top = 0
+    for (var i = 0; i < order.length; ++i) {
+        if (order[i].id === holdId) continue
+        var b = clampBlock(order[i], layout.columns)
+        b.y = top
+        while (!fits(placed, b)) b.y += 1
+        top = b.y
+        placed.push(b)
+    }
+    return { columns: layout.columns, blocks: inOrderOf(layout.blocks, placed) }
+}
+
 // Puts `id` at `block` (clamped); the cards it now overlaps are pushed down,
-// out of its way and each other's, then everything compacts.
+// out of its way and each other's; they close up around it (closeUpAround),
+// then everything compacts.
 function settle(layout, id, block) {
     var columns = layout.columns
     var moved = null
@@ -364,7 +387,7 @@ function settle(layout, id, block) {
         while (!fits(placed, b)) b.y += 1
         placed.push(b)
     }
-    return compact({ columns: columns, blocks: inOrderOf(layout.blocks, placed) })
+    return compact(closeUpAround({ columns: columns, blocks: inOrderOf(layout.blocks, placed) }, id))
 }
 
 // Moves a card to cell (x, y).
@@ -487,6 +510,58 @@ function blockFor(layout, id) {
     for (var i = 0; i < layout.blocks.length; ++i)
         if (layout.blocks[i].id === id) return layout.blocks[i]
     return null
+}
+
+// ── edit mode (basecamp-experiments#51) ─────────────────────────────────
+
+// The cell a card dragged to (`x`, `y`) px (its top left, in the grid)
+// lands on: the nearest, in reach of the grid. One column moves it up and
+// down only. `pitchX` and `pitchY` are a cell plus the gap.
+function dropCell(x, y, pitchX, pitchY, columns, w) {
+    if (columns <= 1) return { x: 0, y: Math.max(0, Math.round(y / pitchY)) }
+    return {
+        x: Math.max(0, Math.min(columns - Math.max(1, w), Math.round(x / pitchX))),
+        y: Math.max(0, Math.round(y / pitchY))
+    }
+}
+
+// How far the page scrolls on one tick while a card is held at `y` px in a
+// view `height` tall: up near the top, down near the bottom, faster the
+// closer to the edge (at most `maxStep`), 0 elsewhere.
+var kScrollEdge = 64
+function autoScrollStep(y, height, maxStep) {
+    var edge = Math.min(kScrollEdge, height / 4)
+    if (edge <= 0) return 0
+    if (y < edge) return -Math.ceil(maxStep * Math.min(1, (edge - y) / edge))
+    if (y > height - edge) return Math.ceil(maxStep * Math.min(1, (y - (height - edge)) / edge))
+    return 0
+}
+
+// What home saves through the shell (shell.saveHomeSettings): its modules
+// and their layouts, one per column count.
+function settingsOf(modules, layouts) {
+    return { version: 1, modules: modules, layouts: layouts }
+}
+
+// The modules and layouts in what was saved, made safe; the defaults and no
+// layouts when nothing usable was. A module list may be empty (all removed).
+function fromSettings(settings) {
+    var out = { modules: defaultModules().map(sanitizeModule), layouts: {} }
+    if (!settings || typeof settings !== "object" || settings.version !== 1) return out
+    if (settings.modules !== undefined && settings.modules !== null && typeof settings.modules === "object") {
+        var ids = []
+        out.modules = arr(settings.modules).map(sanitizeModule).filter(function (m) {
+            if (m.id.length === 0 || m.name.length === 0 || ids.indexOf(m.id) >= 0) return false
+            ids.push(m.id)
+            return true
+        }).slice(0, kMaxModules)
+    }
+    var layouts = settings.layouts
+    if (layouts && typeof layouts === "object")
+        for (var c = 1; c <= kMaxColumns; ++c)
+            if (layouts[String(c)] && typeof layouts[String(c)] === "object")
+                out.layouts[String(c)] = layouts[String(c)]
+    return out
 }
 
 // ── keyboard (basecamp-experiments#48) ──────────────────────────────────

@@ -21,6 +21,9 @@ import "BasecampHomeModules.js" as M
 // Open or Install button (basecamp-experiments#32). Under a type pill, the
 // same block lists the installed apps that share that type, whatever is
 // typed (basecamp-experiments#36).
+// In the desktop's Activity sidebar (feedOnly, basecamp-experiments#44) only
+// the search, the pills and the feed show: no Recent apps, Apps block or
+// modules.
 // Picking a tile asks the shell to turn the current New tab into that app; a
 // card's actions go to the app that published it. It reads only `shell`, the
 // role-gated object the host injects.
@@ -45,6 +48,8 @@ Rectangle {
     // (docs/MOBILE-LAYOUT.md §8): this page then shows the results only.
     property bool searchInBar: false
     property string barQuery: ""
+    // The desktop's Activity sidebar: the search, the pills and the feed only.
+    property bool feedOnly: false
     readonly property string rawQuery: (searchInBar ? barQuery : search.text).trim()
     readonly property string query: rawQuery.toLowerCase()
     // Phone width (Basecampium's compact layout): tighter margins and tiles.
@@ -123,6 +128,7 @@ Rectangle {
     }
     // Enter: the first app found that is installed (never an install).
     function openFirst() {
+        if (root.feedOnly) return
         const hit = root.appHits.find(a => a.state === "running" || a.state === "installed")
         if (root.query.length > 0 && hit) root.launchApp(hit.name)
     }
@@ -131,8 +137,10 @@ Rectangle {
 
     // { type, app } narrowing every module and the feed; null = all.
     property var pill: null
-    // "feed" (the default) or "grid" (modules).
-    property string view: "feed"
+    // "feed" (the default) or "grid" (modules), as the toggle left it;
+    // the sidebar's feed mode always shows the feed.
+    property string chosenView: "feed"
+    readonly property string view: root.feedOnly ? "feed" : root.chosenView
     property var modules: M.defaultModules().map(M.sanitizeModule)
     readonly property var shownModules: M.ordered(root.modules)
 
@@ -351,7 +359,7 @@ Rectangle {
                 id: pillList
                 anchors.left: parent.left
                 anchors.right: viewToggle.left
-                anchors.rightMargin: Theme.spacing.small
+                anchors.rightMargin: viewToggle.visible ? Theme.spacing.small : 0
                 height: parent.height
                 contentWidth: pillRow.width
                 contentHeight: height
@@ -390,12 +398,14 @@ Rectangle {
             LogosIconButton {
                 id: viewToggle
                 objectName: "home.viewToggle"
+                visible: !root.feedOnly
                 anchors.right: parent.right
                 anchors.verticalCenter: parent.verticalCenter
+                width: visible ? Theme.minTouchTarget : 0
                 size: Theme.minTouchTarget
                 iconSource: root.view === "grid" ? LogosIcons.list : LogosIcons.grid
                 Accessible.name: root.view === "grid" ? qsTr("Show the feed") : qsTr("Show the modules")
-                onClicked: root.view = root.view === "grid" ? "feed" : "grid"
+                onClicked: root.chosenView = root.view === "grid" ? "feed" : "grid"
             }
         }
     }
@@ -457,7 +467,8 @@ Rectangle {
             height: Theme.components.search.height
             // The bar names what it narrows (§7).
             placeholderText: root.barPlaceholder
-            shortcutHint: "Ctrl+K"
+            // In the sidebar Ctrl+K opens the overlay instead.
+            shortcutHint: root.feedOnly ? "" : "Ctrl+K"
             onSubmitted: root.openFirst()
             Keys.onReturnPressed: root.openFirst()
             Keys.onEnterPressed: root.openFirst()
@@ -485,7 +496,8 @@ Rectangle {
         ListView {
             id: appRow
             objectName: "newTab.grid"
-            visible: root.pill === null && root.query.length === 0 && root.recentApps.length > 0
+            visible: !root.feedOnly && root.pill === null && root.query.length === 0
+                     && root.recentApps.length > 0
             width: parent.width
             height: visible ? root.tileHeight : 0
             orientation: ListView.Horizontal
@@ -505,7 +517,8 @@ Rectangle {
         }
 
         LogosText {
-            visible: root.apps.length === 0 && root.allRows.length === 0 && root.query.length === 0
+            visible: !root.feedOnly && root.apps.length === 0 && root.allRows.length === 0
+                     && root.query.length === 0
             width: parent.width
             wrapMode: Text.Wrap
             text: qsTr("No apps yet. Find some in Applications.")
@@ -517,7 +530,7 @@ Rectangle {
         Column {
             id: appsBlock
             objectName: "home.apps"
-            visible: root.shownAppHits.length > 0
+            visible: !root.feedOnly && root.shownAppHits.length > 0
             // The content column's width, like the bar and the cards.
             width: parent.width
 
@@ -567,7 +580,7 @@ Rectangle {
             // Under a pill the Apps block lists related apps, not matches,
             // so then only the pill's own results count.
             visible: root.query.length > 0
-                     && (root.pill !== null || root.appHits.length === 0)
+                     && (root.pill !== null || root.appHits.length === 0 || root.feedOnly)
                      && (root.pill ? root.pillRows.length === 0 : root.allRows.length === 0)
             width: parent.width
             wrapMode: Text.Wrap
@@ -684,6 +697,7 @@ Rectangle {
         // The page's foot: a subtle divider and the credit, centred.
         Column {
             objectName: "newTab.footer"
+            visible: !root.feedOnly
             anchors.horizontalCenter: parent.horizontalCenter
             topPadding: Theme.spacing.xlarge
             bottomPadding: Theme.spacing.xlarge * 1.5

@@ -803,6 +803,13 @@ void MainUIBackend::setHomeQuery(const QString& text, bool inBar)
     emit homeQueryChanged();
 }
 
+void MainUIBackend::setHomeFeedOnly(bool on)
+{
+    if (m_homeFeedOnly == on) return;
+    m_homeFeedOnly = on;
+    emit homeFeedOnlyChanged();
+}
+
 void MainUIBackend::setHomePlaceholder(const QString& text)
 {
     // One line of plain text, short enough for the bar.

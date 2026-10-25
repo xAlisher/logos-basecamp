@@ -199,6 +199,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit prefsChanged();
         emit appsChanged();
         emit homeQueryChanged();
+        emit feedOnlyChanged();
         emit recentAppsChanged();
         emit appResultsChanged();
         emit relatedAppsChanged();
@@ -215,6 +216,9 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
     });
     connect(backend, &MainUIBackend::homeQueryAccepted, this, [this]() {
         if (holds("home")) emit homeQueryAccepted();
+    });
+    connect(backend, &MainUIBackend::homeFeedOnlyChanged, this, [this]() {
+        if (holds("home")) emit feedOnlyChanged();
     });
     // Gated: it moves when the user closes or installs an app, timing only the
     // holder may observe.
@@ -426,6 +430,7 @@ QStringList ShellApi::loadingModules() const
 
 bool ShellApi::searchInBar() const { return holds("home") && m_backend->homeSearchInBar(); }
 QString ShellApi::homeQuery() const { return holds("home") ? m_backend->homeQuery() : QString(); }
+bool ShellApi::feedOnly() const { return holds("home") && m_backend->homeFeedOnly(); }
 
 QVariantList ShellApi::recentApps() const
 {

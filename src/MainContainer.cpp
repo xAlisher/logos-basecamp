@@ -572,7 +572,8 @@ bool MainContainer::eventFilter(QObject* watched, QEvent* event)
             toggleHomeOverlay();
             return true;
         }
-        // Esc closes the overlay, unless a dialog is up over it (that one's).
+        // Esc closes the overlay or the sidebar, unless a dialog is up over
+        // it (that one's).
         const bool dialogUp = m_overlayWidget && m_overlayWidget->isVisible();
         if (ke->key() == Qt::Key_Escape && mods == Qt::NoModifier && homeOverlayOpen()
             && !dialogUp && w && w->window() == window()) {
@@ -849,7 +850,7 @@ void MainContainer::setupDesktopUi()
     ShellDevQml::load(m_homeScrim,
         QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/HomeOverlay.qml")),
         [this](QObject* root) {
-            connect(root, SIGNAL(dismissRequested()), this, SLOT(hideHomeOverlay()));
+            connect(root, SIGNAL(outsideClicked(int,int)), this, SLOT(homeScrimClicked(int,int)));
             positionHomeOverlay();
         });
     m_homeScrim->hide();
@@ -883,6 +884,7 @@ void MainContainer::setupDesktopUi()
         toggleHome();
     });
     connect(m_statusBar, &DesktopStatusBar::searchClicked, this, &MainContainer::toggleHomeOverlay);
+    connect(m_statusBar, &DesktopStatusBar::activityClicked, this, &MainContainer::toggleActivitySidebar);
 
     // Full screen is the desktop's natural state; F11 leaves and re-enters it.
     auto* fullScreen = new QShortcut(QKeySequence(Qt::Key_F11), this);
@@ -937,7 +939,7 @@ void MainContainer::updateDock()
     root->setProperty("hiddenApps", hidden);
     const QString active = m_desktop->activeKey();
     root->setProperty("activeKey", active);
-    root->setProperty("homeOpen", homeOverlayOpen());
+    root->setProperty("homeOpen", homeOverlayOpen() && !m_homeSidebar);
     if (!active.isEmpty() && !active.startsWith(QStringLiteral("sys:")))
         m_host->setCurrentVisibleApp(active);
 }
@@ -1087,29 +1089,38 @@ bool MainContainer::homeOverlayOpen() const
     return m_homeScrim && m_homeScrim->isVisible();
 }
 
-// Keeps the overlay, and home's view over its panel, sized to the window.
-// Home's view shows only while the overlay is open.
+// Keeps the overlay (or the Activity sidebar), and home's view over its
+// panel, sized to the window. Home's view shows only while one is open.
 void MainContainer::positionHomeOverlay()
 {
     if (!m_homeScrim)
         return;
     const bool open = homeOverlayOpen();
     const int top = m_statusBar ? m_statusBar->height() : 0;
+    const QRect panel = m_homeSidebar ? HomeOverlayGeometry::sidebar(size(), top)
+                                      : HomeOverlayGeometry::panel(size(), top, kDockReserve);
+    const QRect content = m_homeSidebar ? HomeOverlayGeometry::sidebarContent(size(), top)
+                                        : HomeOverlayGeometry::content(size(), top, kDockReserve);
+    // The sidebar's dim leaves the top bar alone, so its Activity button
+    // (and Search) stay live while it is open.
+    const QRect scrim = m_homeSidebar ? QRect(0, top, width(), std::max(0, height() - top)) : rect();
     if (QObject* root = m_homeScrim->rootObject()) {
-        const QRect panel = HomeOverlayGeometry::panel(size(), top, kDockReserve);
-        root->setProperty("panelX", panel.x());
-        root->setProperty("panelY", panel.y());
+        root->setProperty("sidebar", m_homeSidebar);
+        root->setProperty("panelX", panel.x() - scrim.x());
+        root->setProperty("panelY", panel.y() - scrim.y());
         root->setProperty("panelWidth", panel.width());
         root->setProperty("panelHeight", panel.height());
         root->setProperty("noHome", m_homeApp.isEmpty());
     }
+    if (m_statusBar)
+        m_statusBar->setActivityOpen(open && m_homeSidebar);
     if (open) {
-        m_homeScrim->setGeometry(rect());
+        m_homeScrim->setGeometry(scrim);
         m_homeScrim->raise();
     }
     if (m_homeWidget) {
         if (open) {
-            m_homeWidget->setGeometry(HomeOverlayGeometry::content(size(), top, kDockReserve));
+            m_homeWidget->setGeometry(content);
             m_homeWidget->show();
             m_homeWidget->raise();
         } else {
@@ -1123,9 +1134,23 @@ void MainContainer::positionHomeOverlay()
 
 void MainContainer::showHomeOverlay()
 {
-    if (!m_homeScrim || homeOverlayOpen())
+    openHomeSurface(false);
+}
+
+void MainContainer::showActivitySidebar()
+{
+    openHomeSurface(true);
+}
+
+// Opens home as the overlay or as the sidebar; open as the other one, it
+// moves over (a single view of home), with the same fresh visit.
+void MainContainer::openHomeSurface(bool sidebar)
+{
+    if (!m_homeScrim || (homeOverlayOpen() && m_homeSidebar == sidebar))
         return;
-    m_homeScrim->setGeometry(rect());
+    m_homeSidebar = sidebar;
+    // Home shows only its feed in the sidebar (ShellApi feedOnly, gated to home).
+    QMetaObject::invokeMethod(m_host->backendObject(), "setHomeFeedOnly", Q_ARG(bool, sidebar));
     m_homeScrim->show();
     positionHomeOverlay();
     // Shown first, then a fresh visit (as Basecampium's New tab does): an
@@ -1149,10 +1174,31 @@ void MainContainer::hideHomeOverlay()
 
 void MainContainer::toggleHomeOverlay()
 {
-    if (homeOverlayOpen())
+    if (homeOverlayOpen() && !m_homeSidebar)
         hideHomeOverlay();
     else
         showHomeOverlay();
+}
+
+void MainContainer::toggleActivitySidebar()
+{
+    if (homeOverlayOpen() && m_homeSidebar)
+        hideHomeOverlay();
+    else
+        showActivitySidebar();
+}
+
+// A click on the dim closes home; on the Activity button (the overlay's dim
+// covers the top bar) it moves home over to the sidebar instead.
+void MainContainer::homeScrimClicked(int x, int y)
+{
+    const QPoint global = m_homeScrim->mapToGlobal(QPoint(x, y));
+    if (m_statusBar && !m_homeSidebar
+        && m_statusBar->isOnActivity(m_statusBar->mapFromGlobal(global))) {
+        showActivitySidebar();
+        return;
+    }
+    hideHomeOverlay();
 }
 
 void MainContainer::desktopLaunchFromHome(const QString& name)

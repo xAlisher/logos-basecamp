@@ -282,6 +282,11 @@ public:
     Q_INVOKABLE void acceptHomeQuery() { emit homeQueryAccepted(); }
     QString homeQuery() const { return m_homeQuery; }
     bool homeSearchInBar() const { return m_homeSearchInBar; }
+    // The desktop's Activity sidebar shows home in its feed mode: the search,
+    // the pills and the cards, no Recent apps or Apps block
+    // (basecamp-experiments#44). The shell sets it each time it shows home.
+    Q_INVOKABLE void setHomeFeedOnly(bool on);
+    bool homeFeedOnly() const { return m_homeFeedOnly; }
     // What the bar reads while it searches home ("Search transactions"),
     // set by the home app; "" = the shell's own ("Search apps…").
     Q_INVOKABLE void setHomePlaceholder(const QString& text);
@@ -445,6 +450,7 @@ signals:
     void launcherSearchRequested(const QString& query);
     void homeQueryChanged();
     void homeQueryAccepted();
+    void homeFeedOnlyChanged();
     void homePlaceholderChanged();
     // From the home app: the shell turns the New tab into this app / role.
     void homeLaunchRequested(const QString& name);
@@ -634,6 +640,7 @@ private:
     QString              m_homeQuery;
     QString              m_homePlaceholder;
     bool                 m_homeSearchInBar = false;
+    bool                 m_homeFeedOnly = false;
     LinkRequestCoordinator* m_linkRequests = nullptr;
     // False until wireIntents() has done its bootstrap rebuild, so the
     // cold-start link gate opens on a registry that has actually seen disk.

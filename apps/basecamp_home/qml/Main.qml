@@ -27,6 +27,7 @@ Rectangle {
             id: newTab
             searchInBar: shell.searchInBar
             barQuery: shell.homeQuery
+            feedOnly: shell.feedOnly
             onLaunchApp: name => shell.launch(name)
 
             Connections {

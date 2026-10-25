@@ -80,6 +80,13 @@ private slots:
     void showHomeOverlay();
     void hideHomeOverlay();
     void toggleHomeOverlay();
+    // Desktop layout: the Activity sidebar, the same home app in its feed
+    // mode on the right edge (basecamp-experiments#44). The bar's Activity
+    // button toggles it; Esc and a click outside close it. One home view, so
+    // the sidebar and the overlay replace each other.
+    void showActivitySidebar();
+    void toggleActivitySidebar();
+    void homeScrimClicked(int x, int y);
     // Desktop layout: home asked for an app or a role; it comes up in its
     // window and the overlay closes.
     void desktopLaunchFromHome(const QString& name);
@@ -104,7 +111,9 @@ private:
     void setupDesktopUi();
     void positionDock();
     void positionHomeOverlay();
+    // Either surface of home: the overlay or the Activity sidebar.
     bool homeOverlayOpen() const;
+    void openHomeSurface(bool sidebar);
     QStringList hiddenFromWindowLists() const;
     void onDesktopCloseRequested(const QString& key);
     QWidget* systemAppContent(const QString& key);
@@ -131,6 +140,7 @@ private:
     DesktopArea* m_desktop = nullptr;
     QQuickWidget* m_dockWidget = nullptr;
     QQuickWidget* m_homeScrim = nullptr;         // HomeOverlay.qml, under home's view
+    bool m_homeSidebar = false;                  // it is shown as the Activity sidebar
     DesktopStatusBar* m_statusBar = nullptr;
     DesktopRoot* m_desktopRoot = nullptr;
     bool m_wentFullScreen = false;

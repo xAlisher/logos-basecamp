@@ -9,6 +9,8 @@ import Logos.Controls
 // (HomeOverlayGeometry.h); this page only draws what is around it. The panel
 // is the home page's background colour, so its corners read as the page's.
 // A click outside the panel asks to close; Esc and Ctrl+K are the shell's.
+// As the Activity sidebar (basecamp-experiments#44) the panel is a column on
+// the right edge instead, square, with a lighter dim beside it.
 Item {
     id: root
 
@@ -18,18 +20,22 @@ Item {
     property int panelHeight: 0
     // Nothing can fill `home`: the panel says so itself.
     property bool noHome: false
+    property bool sidebar: false
 
-    signal dismissRequested()
+    // A click outside the panel, in this view's coordinates: the shell
+    // closes it, or switches to the sidebar when it lands on the top bar's
+    // Activity button (the dim covers the bar).
+    signal outsideClicked(int x, int y)
 
     Rectangle {
         anchors.fill: parent
-        color: Qt.rgba(0, 0, 0, 0.45)
+        color: Qt.rgba(0, 0, 0, root.sidebar ? 0.2 : 0.45)
     }
 
     MouseArea {
         objectName: "homeOverlay.scrim"
         anchors.fill: parent
-        onClicked: root.dismissRequested()
+        onClicked: mouse => root.outsideClicked(mouse.x, mouse.y)
     }
 
     Rectangle {
@@ -38,13 +44,21 @@ Item {
         y: root.panelY
         width: root.panelWidth
         height: root.panelHeight
-        radius: Theme.spacing.radiusXlarge
+        radius: root.sidebar ? 0 : Theme.spacing.radiusXlarge
         color: Theme.palette.background
         border.color: Theme.palette.border
-        border.width: 1
+        border.width: root.sidebar ? 0 : 1
 
         // Clicks on the panel stay on the panel.
         MouseArea { anchors.fill: parent }
+
+        // The sidebar's one edge against the desktop.
+        Rectangle {
+            visible: root.sidebar
+            width: 1
+            height: parent.height
+            color: Theme.palette.border
+        }
 
         Column {
             visible: root.noHome

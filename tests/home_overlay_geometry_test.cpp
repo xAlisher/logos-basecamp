@@ -1,6 +1,7 @@
 // Unit tests for where the desktop layout's Basecamp overlay puts its panel
 // (src/HomeOverlayGeometry.h, basecamp-experiments#43): centred, 840 to 1000
-// px wide, the height between the top bar and the dock, never off the window.
+// px wide, the height between the top bar and the dock, never off the window;
+// and the Activity sidebar's column on the right edge (#44).
 //
 // Run: nix build .#unit-tests -L
 
@@ -58,6 +59,36 @@ private slots:
         const QRect p = HomeOverlayGeometry::panel(QSize(20, 20), 30, 92);
         QVERIFY(p.width() >= 0);
         QVERIFY(p.height() >= 0);
+    }
+
+    // The Activity sidebar (basecamp-experiments#44).
+    void sidebarHugsTheRightEdgeUnderTheBar()
+    {
+        const QRect s = HomeOverlayGeometry::sidebar(QSize(1280, 800), 36);
+        QCOMPARE(s.width(), HomeOverlayGeometry::kSidebarWidth);
+        QCOMPARE(s.x() + s.width(), 1280);
+        QCOMPARE(s.top(), 36);
+        QCOMPARE(s.y() + s.height(), 800);
+    }
+
+    void sidebarContentLeavesTheBorder()
+    {
+        const QSize area(1440, 900);
+        const QRect s = HomeOverlayGeometry::sidebar(area, 36);
+        const QRect c = HomeOverlayGeometry::sidebarContent(area, 36);
+        QCOMPARE(c.x(), s.x() + 1);
+        QCOMPARE(c.right(), s.right());
+        QCOMPARE(c.height(), s.height());
+    }
+
+    void sidebarNarrowerThanTheWindowNeverOverflows()
+    {
+        const QRect s = HomeOverlayGeometry::sidebar(QSize(300, 500), 36);
+        QCOMPARE(s.x(), 0);
+        QCOMPARE(s.width(), 300);
+        const QRect t = HomeOverlayGeometry::sidebar(QSize(0, 10), 36);
+        QVERIFY(t.width() >= 0);
+        QVERIFY(t.height() >= 0);
     }
 };
 

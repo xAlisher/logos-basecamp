@@ -72,6 +72,9 @@ class ShellApi : public QObject {
     // search (Basecampium's phone layout); home then hides its own field.
     Q_PROPERTY(bool searchInBar READ searchInBar NOTIFY homeQueryChanged)
     Q_PROPERTY(QString homeQuery READ homeQuery NOTIFY homeQueryChanged)
+    // Home is shown as the desktop's Activity sidebar: only the search, the
+    // pills and the cards (basecamp-experiments#44).
+    Q_PROPERTY(bool feedOnly READ feedOnly NOTIFY feedOnlyChanged)
     // Recent apps: recently closed and recently installed, newest first, in
     // installedApps' row shape plus recentKind ("closed" | "installed").
     // Empty on a fresh profile; home then shows the role apps.
@@ -114,6 +117,7 @@ public:
 
     bool searchInBar() const;
     QString homeQuery() const;
+    bool feedOnly() const;
     QVariantList recentApps() const;
 
     // settings
@@ -213,6 +217,7 @@ signals:
     void appsChanged();
     void launcherSearchRequested(const QString& query);
     void homeQueryChanged();
+    void feedOnlyChanged();
     void recentAppsChanged();
     // home: findApps would answer differently (an app opened, closed,
     // installed or removed, the catalog arrived). Coalesced.

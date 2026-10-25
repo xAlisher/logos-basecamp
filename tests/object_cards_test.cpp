@@ -639,6 +639,53 @@ private slots:
                  QStringLiteral("2"));
     }
 
+    // ── resize handles (basecamp-experiments#52) ────────────────────────
+
+    void gridSizeLimits()
+    {
+        // 3 columns of 392 px: one is wide enough, the right edge stops it.
+        QCOMPARE(hs("JSON.stringify(sizeLimits({ x: 1, y: 0, w: 1, h: 3 }, 3, 392, 12))"),
+                 QStringLiteral("{\"minW\":1,\"maxW\":2,\"minH\":2,\"maxH\":8}"));
+        // Columns narrower than a readable card: two at least, unless the
+        // card is narrower already (then it may stay so).
+        QCOMPARE(hs("JSON.stringify(sizeLimits({ x: 0, y: 0, w: 3, h: 2 }, 4, 200, 12))"),
+                 QStringLiteral("{\"minW\":2,\"maxW\":4,\"minH\":2,\"maxH\":8}"));
+        QCOMPARE(hs("sizeLimits({ x: 0, y: 0, w: 1, h: 2 }, 4, 200, 12).minW"), QStringLiteral("1"));
+        // Taller than kMaxRows already: it is not cut down.
+        QCOMPARE(hs("sizeLimits({ x: 0, y: 0, w: 1, h: 10 }, 1, 366, 12).maxH"), QStringLiteral("10"));
+    }
+
+    void gridSnapSize()
+    {
+        h("var lim = { minW: 1, maxW: 3, minH: 2, maxH: 8 }");
+        // pitch 404 x 132 (cells 392 x 120, gap 12): to the nearest cell.
+        QCOMPARE(hs("JSON.stringify(snapSize(392, 384, 404, 132, 12, lim))"), QStringLiteral("{\"w\":1,\"h\":3}"));
+        QCOMPARE(hs("JSON.stringify(snapSize(620, 470, 404, 132, 12, lim))"), QStringLiteral("{\"w\":2,\"h\":4}"));
+        // Within the limits.
+        QCOMPARE(hs("JSON.stringify(snapSize(10, 10, 404, 132, 12, lim))"), QStringLiteral("{\"w\":1,\"h\":2}"));
+        QCOMPARE(hs("JSON.stringify(snapSize(9000, 9000, 404, 132, 12, lim))"), QStringLiteral("{\"w\":3,\"h\":8}"));
+    }
+
+    // The issue's cases on the model: Transactions 2 wide to 1, the next
+    // card moves up beside it; News 1x3 to 2x5 pushes what it covers down.
+    void gridResizeCases()
+    {
+        h("var mods = defaultModules().map(sanitizeModule)");
+        h("var l2 = migrateLayout(mods, 2)");
+        QCOMPARE(cells("resize(l2, 'transactions', 1, 4)"),
+                 QStringLiteral("transactions@0,0 1x4 | communities@1,0 1x3 | messages@0,4 1x3"
+                                " | wallet@0,7 1x2 | news@0,9 2x2"));
+        h("var l4 = place(resize(migrateLayout(mods, 4), 'news', 1, 3), 'news', 0, 0)");
+        QCOMPARE(cells("l4"), QStringLiteral("news@0,0 1x3 | messages@2,0 1x3 | communities@3,0 1x3"
+                                             " | transactions@0,3 2x4 | wallet@2,3 1x2"));
+        h("var big = resize(l4, 'news', 2, 5)");
+        // Transactions, under it, moves down; the others stay.
+        QCOMPARE(cells("big"), QStringLiteral("news@0,0 2x5 | messages@2,0 1x3 | communities@3,0 1x3"
+                                              " | wallet@2,3 1x2 | transactions@0,5 2x4"));
+        QCOMPARE(hs("big.blocks.every((a, i) => big.blocks.every((b, j) => i === j || !overlaps(a, b)))"),
+                 QStringLiteral("true"));
+    }
+
     // ── keyboard (basecamp-experiments#48) ──────────────────────────────
 
     void keyboardNavigation()

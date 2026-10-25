@@ -810,7 +810,8 @@ Rectangle {
                 anchors.rightMargin: root.compact ? 0 : Theme.spacing.medium
                 y: root.compact ? 0 : (parent.height - height) / 2
                 wrapMode: Text.Wrap
-                text: qsTr("Drag a module to move it. Changes are kept when you press Done.")
+                text: root.compact ? qsTr("Drag a module to move it, its bottom edge to resize it. Changes are kept when you press Done.")
+                                    : qsTr("Drag a module to move it, its edges to resize it. Changes are kept when you press Done.")
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
             }
@@ -1034,6 +1035,9 @@ Rectangle {
         // (M.place on the layout from before the press). Near the top or
         // bottom edge the page scrolls. On a phone only the header drags a
         // module, so the rest of it still scrolls the page.
+        // Handles on a module's right edge, bottom edge and corner resize it
+        // (#52) the same way (M.resize), within M.sizeLimits; a phone has the
+        // bottom one only.
 
         // Wide screens: the grid's own heading, with Edit home beside it.
         Item {
@@ -1086,16 +1090,23 @@ Rectangle {
             readonly property int shownCount: grid.visibleLayout.blocks.length
             readonly property real gridHeight: {
                 const rows = M.rowsOf(grid.shown)
-                // While a module is held, room below it for where it is.
-                const held = grid.dragId.length > 0 ? grid.dragY + grid.dragH : 0
+                // While a module is held, room below it for where it is, and
+                // never less than at the press: a page that got shorter under
+                // the pointer would scroll it, and that would move the edge
+                // being dragged again.
+                const held = grid.dragId.length > 0 ? Math.max(grid.dragY + grid.dragH, grid.holdHeight) : 0
                 return Math.max(rows > 0 ? rows * grid.pitchY - grid.gap : 0, held)
             }
 
-            // The module held in edit mode: its id, its top left and size in
-            // px as the pointer leaves it, where it was taken (in it), the
-            // pointer in `scroll`'s coordinates, and the layout from before
-            // the press that every move starts from.
+            // The module held in edit mode: its id, what is done to it ("move",
+            // or the handle: "right", "bottom", "corner"), its top left and
+            // size in px as the pointer leaves it, where it was taken (in it,
+            // or for a handle in the grid), the pointer in `scroll`'s
+            // coordinates, and the layout from before the press that every
+            // step starts from.
             property string dragId: ""
+            property string dragMode: ""
+            property var limits: null
             property real dragX: 0
             property real dragY: 0
             property real dragW: 0
@@ -1104,18 +1115,41 @@ Rectangle {
             property point pointer: Qt.point(0, 0)
             property var dragBase: null
             property string dropKey: ""
+            property real holdHeight: 0
 
             function beginMove(id, card, at) {
                 if (!grid.editing) return
                 grid.dragBase = grid.layout
+                grid.holdHeight = grid.height
                 grid.grabAt = at
                 grid.dragX = card.x
                 grid.dragY = card.y
                 grid.dragW = card.width
                 grid.dragH = card.height
                 grid.dropKey = ""
+                grid.dragMode = "move"
                 grid.dragId = id
             }
+            // A handle pressed at `p` (in `scroll`'s coordinates).
+            function beginResize(id, edge, card, p) {
+                const b = M.blockFor(grid.layout, id)
+                if (!grid.editing || !b) return
+                grid.dragBase = grid.layout
+                grid.holdHeight = grid.height
+                grid.limits = M.sizeLimits(b, grid.columns, grid.columnWidth, grid.gap)
+                grid.grabAt = scroll.mapToItem(grid, p.x, p.y)
+                grid.pointer = p
+                grid.dragX = card.x
+                grid.dragY = card.y
+                grid.dragW = card.width
+                grid.dragH = card.height
+                grid.dropKey = ""
+                grid.dragMode = edge
+                grid.dragId = id
+            }
+            // Cells to px: a block `n` cells wide or tall.
+            function spanW(n) { return n * grid.columnWidth + (n - 1) * grid.gap }
+            function spanH(n) { return n * grid.rowHeight + (n - 1) * grid.gap }
             function dragTo(p) {
                 grid.pointer = p
                 grid.follow()
@@ -1125,6 +1159,24 @@ Rectangle {
             function follow() {
                 if (grid.dragId.length === 0) return
                 const g = scroll.mapToItem(grid, grid.pointer.x, grid.pointer.y)
+                if (grid.dragMode !== "move") {
+                    // The edge follows the pointer, stopped at the limits.
+                    const base = M.blockFor(grid.dragBase, grid.dragId)
+                    const lim = grid.limits
+                    if (!base || !lim) return
+                    if (grid.dragMode !== "bottom")
+                        grid.dragW = Math.max(grid.spanW(lim.minW), Math.min(grid.spanW(lim.maxW),
+                                              grid.spanW(base.w) + g.x - grid.grabAt.x))
+                    if (grid.dragMode !== "right")
+                        grid.dragH = Math.max(grid.spanH(lim.minH), Math.min(grid.spanH(lim.maxH),
+                                              grid.spanH(base.h) + g.y - grid.grabAt.y))
+                    const size = M.snapSize(grid.dragW, grid.dragH, grid.pitchX, grid.pitchY, grid.gap, lim)
+                    const sizeKey = size.w + "x" + size.h
+                    if (sizeKey === grid.dropKey) return
+                    grid.dropKey = sizeKey
+                    root.setDraft(M.resize(grid.dragBase, grid.dragId, size.w, size.h))
+                    return
+                }
                 grid.dragX = grid.columns <= 1 ? 0
                            : Math.max(0, Math.min(grid.width - grid.dragW, g.x - grid.grabAt.x))
                 // No further down than under the last module: the page stops
@@ -1141,6 +1193,8 @@ Rectangle {
             // The module lands where its ghost is: the draft already has it.
             function endDrag() {
                 grid.dragId = ""
+                grid.dragMode = ""
+                grid.limits = null
                 grid.dragBase = null
                 grid.dropKey = ""
             }
@@ -1190,13 +1244,15 @@ Rectangle {
                     required property var modelData
                     readonly property var block: M.blockFor(grid.shown, modelData.id)
                     readonly property bool held: grid.dragId === modelData.id
+                    readonly property bool moving: held && grid.dragMode === "move"
+                    readonly property bool sizing: held && grid.dragMode !== "move"
                     module: modelData
                     editing: grid.editing
                     z: held ? 2 : 1
-                    x: held ? grid.dragX : block ? block.x * grid.pitchX : 0
-                    y: held ? grid.dragY : block ? block.y * grid.pitchY : 0
-                    width: block ? block.w * grid.columnWidth + (block.w - 1) * grid.gap : grid.columnWidth
-                    height: block ? block.h * grid.rowHeight + (block.h - 1) * grid.gap : 0
+                    x: moving ? grid.dragX : block ? block.x * grid.pitchX : 0
+                    y: moving ? grid.dragY : block ? block.y * grid.pitchY : 0
+                    width: sizing ? grid.dragW : block ? grid.spanW(block.w) : grid.columnWidth
+                    height: sizing ? grid.dragH : block ? grid.spanH(block.h) : 0
                     Behavior on x { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     Behavior on y { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
                     Behavior on width { enabled: grid.animate && !cardItem.held; NumberAnimation { duration: 180; easing.type: Easing.OutCubic } }
@@ -1355,6 +1411,34 @@ Rectangle {
             }
         }
 
+        // Resize handles (#52): the right edge, the bottom edge and the
+        // corner, each a touch target wide (drawn smaller). A phone, one
+        // column, has the bottom one only.
+        Handle {
+            edge: "right"
+            visible: grid.columns > 1 && !root.compact
+            x: frame.width - width
+            y: frame.headerBottom
+            width: Theme.minTouchTarget
+            height: Math.max(0, frame.height - frame.headerBottom - Theme.minTouchTarget)
+        }
+        Handle {
+            edge: "bottom"
+            x: 0
+            y: frame.height - height
+            width: frame.width - (cornerHandle.visible ? Theme.minTouchTarget : 0)
+            height: Theme.minTouchTarget
+        }
+        Handle {
+            id: cornerHandle
+            edge: "corner"
+            visible: grid.columns > 1 && !root.compact
+            x: frame.width - width
+            y: frame.height - height
+            width: Theme.minTouchTarget
+            height: Theme.minTouchTarget
+        }
+
         // The drag handle: six dots in the header's right corner.
         Item {
             objectName: "home.module." + frame.modName + ".handle"
@@ -1379,6 +1463,47 @@ Rectangle {
                     }
                 }
             }
+        }
+    }
+
+    // One resize handle of an EditFrame (#52).
+    component Handle: MouseArea {
+        id: handle
+        property string edge: ""
+        // The EditFrame it is on.
+        property Item frame: parent
+        readonly property bool active: handle.frame.held && grid.dragMode === handle.edge
+        objectName: "home.module." + handle.frame.modName + ".resize." + handle.edge
+        preventStealing: true
+        hoverEnabled: true
+        cursorShape: handle.edge === "right" ? Qt.SizeHorCursor
+                   : handle.edge === "bottom" ? Qt.SizeVerCursor : Qt.SizeFDiagCursor
+        Accessible.role: Accessible.Grip
+        Accessible.name: qsTr("Resize %1").arg(handle.frame.modName)
+        onPressed: mouse => grid.beginResize(handle.frame.modId, handle.edge, handle.frame.card,
+                                             handle.mapToItem(scroll, mouse.x, mouse.y))
+        onPositionChanged: mouse => { if (handle.active) grid.dragTo(handle.mapToItem(scroll, mouse.x, mouse.y)) }
+        onReleased: if (handle.active) grid.endDrag()
+        onCanceled: if (handle.active) grid.endDrag()
+
+        // Drawn on the card's edge: a short bar, or two for the corner.
+        Rectangle {
+            visible: handle.edge !== "bottom"
+            x: handle.width - width - 4
+            y: handle.edge === "corner" ? handle.height - 4 - height : (handle.height - height) / 2
+            width: 4
+            height: handle.edge === "corner" ? 16 : Math.min(32, handle.height)
+            radius: 2
+            color: handle.active || handle.containsMouse ? Theme.palette.accentOrange : Theme.palette.textTertiary
+        }
+        Rectangle {
+            visible: handle.edge !== "right"
+            x: handle.edge === "corner" ? handle.width - 4 - width : (handle.width - width) / 2
+            y: handle.height - height - 4
+            width: handle.edge === "corner" ? 16 : 32
+            height: 4
+            radius: 2
+            color: handle.active || handle.containsMouse ? Theme.palette.accentOrange : Theme.palette.textTertiary
         }
     }
 

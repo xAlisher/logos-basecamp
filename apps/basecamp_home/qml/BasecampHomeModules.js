@@ -537,6 +537,38 @@ function autoScrollStep(y, height, maxStep) {
     return 0
 }
 
+// ── resize (basecamp-experiments#52) ────────────────────────────────────
+
+// A card is at most this many rows tall from its handles, and never
+// narrower than one item card stays readable (px).
+var kMaxRows = 8
+var kMinCardWidth = 280
+
+// What a card's handles allow, in cells: { minW, maxW, minH, maxH }. Width
+// from the narrowest that is kMinCardWidth px wide (or the card's own width
+// when it is narrower already) to the grid's right edge; height kMinRows to
+// kMaxRows (or more, if it is taller already).
+function sizeLimits(block, columns, columnWidth, gap) {
+    var need = Math.max(1, Math.ceil((kMinCardWidth + gap) / (columnWidth + gap)))
+    var maxW = Math.max(1, columns - block.x)
+    return {
+        minW: Math.min(need, block.w, maxW),
+        maxW: maxW,
+        minH: kMinRows,
+        maxH: Math.max(kMaxRows, block.h)
+    }
+}
+
+// The cells a card `w` x `h` px tall snaps to (the nearest), within
+// `limits` (sizeLimits). `pitchX` and `pitchY` are a cell plus the gap.
+function snapSize(w, h, pitchX, pitchY, gap, limits) {
+    var clamp = function (v, lo, hi) { return Math.max(lo, Math.min(hi, v)) }
+    return {
+        w: clamp(Math.round((w + gap) / pitchX), limits.minW, limits.maxW),
+        h: clamp(Math.round((h + gap) / pitchY), limits.minH, limits.maxH)
+    }
+}
+
 // What home saves through the shell (shell.saveHomeSettings): its modules
 // and their layouts, one per column count.
 function settingsOf(modules, layouts) {

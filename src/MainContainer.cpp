@@ -47,6 +47,9 @@ constexpr int kContentStackIndex  = 1;  // ContentViews.qml (App Manager + Setti
 constexpr int kModulesStackIndex  = 2;  // the `packages` role's fallback page
 constexpr int kSettingsFallbackIndex = 3;  // the `settings` role's fallback page
 constexpr int kLauncherFallbackIndex = 4;  // the `launcher` role's fallback page
+// Home's filter pills on a phone sit on the bottom bar: a 44 px row with 8 px
+// above and below (NewTabPage.qml, home.pillDock).
+constexpr int kHomePillDockHeight = 44 + 2 * 8;
 
 // The shell's own entry points for roles ("sys:packages" in a menu or a saved
 // tab) and the role each opens (ADR-067). Empty: not a role.
@@ -1132,6 +1135,7 @@ void MainContainer::setupTabsUi()
             m_host->setCurrentVisibleApp(key);
         if (m_notifyWidget && m_notifyWidget->rootObject())
             m_notifyWidget->rootObject()->setProperty("currentApp", key);
+        positionNotifications();   // on a phone, home's pills move the toast up
         onNotificationsChanged();   // the tab now shown has been seen
         if (m_shortcutBridge)
             m_shortcutBridge->rebindDeferred();
@@ -1585,7 +1589,13 @@ void MainContainer::positionNotifications()
         const int bottom = height() - m_tabArea->bottomBarHeight() - 8;
         m_notifyWidget->setGeometry((width() - w) / 2, qMax(top, bottom - h), w, h);
     } else if (compact) {
-        m_notifyWidget->setGeometry((width() - w) / 2, top, w, h);
+        // Low, just above the bottom bar, so a toast never covers the top of
+        // the page (home's Recent apps, the Apps block). On home, also above
+        // its filter pills, which sit on the bar.
+        int bottom = height() - m_tabArea->bottomBarHeight() - 8;
+        if (TabArea::isNewTabKey(m_tabArea->currentKey()))
+            bottom -= kHomePillDockHeight;
+        m_notifyWidget->setGeometry((width() - w) / 2, qMax(top, bottom - h), w, h);
     } else {
         m_notifyWidget->setGeometry(width() - w - 12, top, w, h);
     }

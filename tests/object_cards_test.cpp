@@ -278,8 +278,6 @@ private slots:
         h("mods = updateModule(mods, 'news', { pinned: true, size: 'small' })");
         QCOMPARE(hs("ordered(mods)[0].id"), QStringLiteral("news"));
         QCOMPARE(hs("ordered(mods)[0].size"), QStringLiteral("small"));
-        QCOMPARE(hs("nextSize('row')"), QStringLiteral("small"));
-        QCOMPARE(hs("nextSize('small')"), QStringLiteral("medium"));
         h("mods = removeModule(mods, 'wallet')");
         QCOMPARE(h("mods.length").toInt(), 4);
     }
@@ -376,10 +374,55 @@ private slots:
         QCOMPARE(hs("stableOrder(s3.map, ['c', 'n']).ids.join('')"), QStringLiteral("nc"));
     }
 
-    void shownBySize()
+    // ── cards fit their block (basecamp-experiments#53) ─────────────────
+
+    // How many items fit whole, given their heights: a line of `columns` is
+    // as tall as its tallest, spacing between lines, nothing cut off.
+    void fitCount()
     {
-        QCOMPARE(h("shownCount('row')").toInt(), 10);
-        QCOMPARE(h("shownCount('bogus')").toInt(), h("shownCount('medium')").toInt());
+        auto fit = [this](const char* heights, int columns, int available) {
+            return h(QStringLiteral("fitCount(%1, %2, %3, 8)").arg(QLatin1String(heights)).arg(columns)
+                         .arg(available)).toInt();
+        };
+        // One column: 100 + 8 + 100 = 208 fits two, 316 three.
+        QCOMPARE(fit("[100, 100, 100]", 1, 207), 1);
+        QCOMPARE(fit("[100, 100, 100]", 1, 208), 2);
+        QCOMPARE(fit("[100, 100, 100]", 1, 316), 3);
+        QCOMPARE(fit("[100, 100, 100]", 1, 9999), 3);
+        // Not even one.
+        QCOMPARE(fit("[300]", 1, 200), 0);
+        QCOMPARE(fit("[]", 1, 200), 0);
+        // Two columns: lines of two, the taller sets the line (150 + 8 + 100).
+        QCOMPARE(fit("[100, 150, 100, 60]", 2, 257), 2);
+        QCOMPARE(fit("[100, 150, 100, 60]", 2, 258), 4);
+        // A last line with one item counts it.
+        QCOMPARE(fit("[100, 100, 100]", 2, 208), 3);
+        // Compact rows (44 px) in a two-row block: 172 px holds three.
+        QCOMPARE(fit("[44, 44, 44, 44, 44]", 1, 172), 3);
+        // An item not measured yet stops the count.
+        QCOMPARE(fit("[100, 0, 100]", 1, 9999), 1);
+        QCOMPARE(fit("[0]", 3, 9999), 0);
+    }
+
+    // Width decides the columns (each at least 300 px, 1 to 3), height
+    // whether the rows are one-line, and how many a module builds at most.
+    void fitColumnsAndForm()
+    {
+        QCOMPARE(h("itemColumns(299, 8)").toInt(), 1);
+        QCOMPARE(h("itemColumns(356, 8)").toInt(), 1);
+        QCOMPARE(h("itemColumns(608, 8)").toInt(), 2);
+        QCOMPARE(h("itemColumns(760, 8)").toInt(), 2);
+        QCOMPARE(h("itemColumns(916, 8)").toInt(), 3);
+        QCOMPARE(h("itemColumns(4000, 8)").toInt(), 3);
+        QCOMPARE(h("itemColumns(0, 8)").toInt(), 1);
+        QVERIFY(h("compactRows(2)").toBool());
+        QVERIFY(!h("compactRows(3)").toBool());
+        QVERIFY(!h("compactRows(0)").toBool());
+        // A two-row block's 172 px: three one-line rows a column.
+        QCOMPARE(h("candidateCount(172, 1, 8)").toInt(), 3);
+        QCOMPARE(h("candidateCount(172, 3, 8)").toInt(), 9);
+        QCOMPARE(h("candidateCount(43, 1, 8)").toInt(), 0);
+        QCOMPARE(h("candidateCount(-20, 2, 8)").toInt(), 0);
     }
 
     // ── the cell grid (basecamp-experiments#49) ─────────────────────────

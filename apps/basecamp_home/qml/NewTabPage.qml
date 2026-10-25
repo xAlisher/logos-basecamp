@@ -1248,6 +1248,8 @@ Rectangle {
                     readonly property bool sizing: held && grid.dragMode !== "move"
                     module: modelData
                     editing: grid.editing
+                    // What it draws fits its block's height (#53).
+                    cellRows: block ? block.h : 0
                     z: held ? 2 : 1
                     x: moving ? grid.dragX : block ? block.x * grid.pitchX : 0
                     y: moving ? grid.dragY : block ? block.y * grid.pitchY : 0

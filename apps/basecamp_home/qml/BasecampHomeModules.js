@@ -8,16 +8,13 @@
 // (A file name no other bundled app uses: two ui_qml apps shipping a file of
 // the same name collide, spec §11.)
 
+// The sizes modules had before the grid: only the first layout reads them
+// (migrateLayout); a module's block is its size now (#53).
 var kSizes = ["small", "medium", "large", "row"]
 
 // The host keeps 8 live results per view (ObjectSearch::kMaxLivePerView):
 // one for the pills and the feed, one per module.
 var kMaxModules = 7
-
-// How many objects a module of each size shows: small = one-line rows,
-// medium and large = whole cards (large is two columns wide), row = a
-// sideways strip of cards across the whole grid.
-var kShownBySize = { "small": 3, "medium": 2, "large": 4, "row": 10 }
 
 var kMaxNameLength = 40
 var kMaxQueryLength = 80
@@ -116,15 +113,6 @@ function updateModule(modules, id, change) {
 
 function removeModule(modules, id) {
     return modules.filter(function (m) { return m.id !== id })
-}
-
-function nextSize(size) {
-    var i = kSizes.indexOf(size)
-    return kSizes[(i + 1) % kSizes.length]
-}
-
-function shownCount(size) {
-    return kShownBySize.hasOwnProperty(size) ? kShownBySize[size] : kShownBySize.medium
 }
 
 // ── pills ───────────────────────────────────────────────────────────────
@@ -567,6 +555,59 @@ function snapSize(w, h, pitchX, pitchY, gap, limits) {
         w: clamp(Math.round((w + gap) / pitchX), limits.minW, limits.maxW),
         h: clamp(Math.round((h + gap) / pitchY), limits.minH, limits.maxH)
     }
+}
+
+// ── cards fit their block (basecamp-experiments#53) ────────────────────
+// A module's block decides what it draws: its height how many items show
+// (whole ones only), its width how many columns of them. Two rows tall it
+// draws one-line rows instead of item cards.
+
+// An item card is at least this wide (px); a module has 1 to 3 columns.
+var kMinItemWidth = 300
+var kMaxItemColumns = 3
+// The shortest an item is: a one-line row is one touch target tall.
+var kMinItemHeight = 44
+
+// Columns of items in a module whose content is `width` px wide, with
+// `spacing` between them.
+function itemColumns(width, spacing) {
+    var n = Math.floor((width + spacing) / (kMinItemWidth + spacing))
+    return Math.max(1, Math.min(kMaxItemColumns, isFinite(n) ? n : 1))
+}
+
+// Whether a block `h` rows tall draws one-line rows.
+function compactRows(h) {
+    return h > 0 && h <= kMinRows
+}
+
+// The most items that could fit in `available` px on `columns`: what a
+// module builds before it measures them (each is kMinItemHeight or more).
+function candidateCount(available, columns, spacing) {
+    if (!(available >= kMinItemHeight)) return 0
+    return Math.max(1, columns) * Math.floor((available + spacing) / (kMinItemHeight + spacing))
+}
+
+// How many items fit whole in `available` px: laid out `columns` to a line
+// in order, a line as tall as its tallest item, `spacing` between lines.
+// `heights` are the items' heights in px; one not measured yet (0 or less)
+// stops the count, so nothing is shown that might not fit.
+function fitCount(heights, columns, available, spacing) {
+    heights = arr(heights)
+    columns = Math.max(1, columns)
+    var used = 0, n = 0
+    for (var start = 0; start < heights.length; start += columns) {
+        var line = 0
+        var end = Math.min(heights.length, start + columns)
+        for (var i = start; i < end; ++i) {
+            if (!(heights[i] > 0)) return n
+            line = Math.max(line, heights[i])
+        }
+        var next = used + (start > 0 ? spacing : 0) + line
+        if (next > available) return n
+        used = next
+        n = end
+    }
+    return n
 }
 
 // What home saves through the shell (shell.saveHomeSettings): its modules

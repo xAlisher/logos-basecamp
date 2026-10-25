@@ -43,6 +43,16 @@ Rectangle {
         root.pill = null
         root.startVisit()
     }
+    // Esc in the search (#47): clears what was typed, the type pill stays.
+    // True when there was text to clear; the desktop shell asks this before
+    // Esc closes the overlay or the sidebar. Basecampium's compact bar is the
+    // shell's own, with its own Esc (Back).
+    function escapeSearch() {
+        if (root.searchInBar || search.text.length === 0)
+            return false
+        search.text = ""
+        return true
+    }
 
     // Basecampium's compact layout puts the search in its one bar
     // (docs/MOBILE-LAYOUT.md §8): this page then shows the results only.
@@ -472,6 +482,7 @@ Rectangle {
             onSubmitted: root.openFirst()
             Keys.onReturnPressed: root.openFirst()
             Keys.onEnterPressed: root.openFirst()
+            Keys.onEscapePressed: event => { event.accepted = root.escapeSearch() }
         }
 
         Loader {

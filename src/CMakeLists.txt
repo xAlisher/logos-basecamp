@@ -50,6 +50,7 @@ set(SOURCES
     TabArea.cpp
     AppTileIcon.h
     HomeOverlayGeometry.h
+    HomeEscape.h
     AppTileIcon.cpp
     ShellPrefs.h
     ShellPrefs.cpp

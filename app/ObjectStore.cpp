@@ -423,6 +423,17 @@ QVariantMap ObjectStore::validate(const QString& app, int index, const QVariantM
 QString ObjectStore::publish(const QString& app, const QVariantMap& params,
                              int* badIndex, QStringList* ids)
 {
+    return publishBatch(app, params, badIndex, ids, /*fromHost=*/false);
+}
+
+QString ObjectStore::publishFromHost(const QString& app, const QVariantMap& params)
+{
+    return publishBatch(app, params, nullptr, nullptr, /*fromHost=*/true);
+}
+
+QString ObjectStore::publishBatch(const QString& app, const QVariantMap& params,
+                                  int* badIndex, QStringList* ids, bool fromHost)
+{
     if (badIndex) *badIndex = -1;
     if (app.isEmpty())
         return QStringLiteral("bad_request");
@@ -467,7 +478,7 @@ QString ObjectStore::publish(const QString& app, const QVariantMap& params,
         clean << o;
     }
 
-    if (!allow(app)) {
+    if (!fromHost && !allow(app)) {
         qWarning().noquote() << "ObjectStore:" << app << "publish refused — over"
                              << kRateRequests << "requests per" << kRateWindowMs / 1000 << "s";
         return QStringLiteral("failed");
@@ -495,9 +506,10 @@ QString ObjectStore::publish(const QString& app, const QVariantMap& params,
         if (!o.contains(QStringLiteral("time")))
             o[QStringLiteral("time")] = t;
         // An update in place (a transfer's progress) is not news: replacing
-        // keeps whether a view has shown it. Only a new key starts unseen.
+        // keeps whether a view has shown it. Only a new key starts unseen,
+        // and a notification, whose replacement is news by definition.
         const auto existing = m_objects.constFind(id);
-        o[QStringLiteral("seen")] = existing != m_objects.cend()
+        o[QStringLiteral("seen")] = !fromHost && existing != m_objects.cend()
             && existing->value(QStringLiteral("seen")).toBool();
         m_objects.insert(id, o);
         mine.insert(id);

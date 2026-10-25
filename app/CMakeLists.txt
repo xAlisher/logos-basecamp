@@ -312,6 +312,7 @@ set(PROJECT_SOURCES
 
     MainUIBackend.cpp
     NotificationCenter.cpp
+    NotificationObjects.cpp
     ObjectStore.cpp
     ObjectRanker.cpp
     ObjectResults.cpp

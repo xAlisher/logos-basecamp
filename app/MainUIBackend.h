@@ -215,6 +215,9 @@ public:
     Q_INVOKABLE void setNotificationsEnabled(const QString& app, bool enabled);
     QObject* objectStore() const;
     QVariantList searchApps() const;
+    // The apps whose objects the store keeps: those that publish, and those
+    // that notify (their notifications are feed cards). Rows of searchApps.
+    QStringList objectPublishers() const;
     // Emits searchAppsChanged only if searchApps() differs from what was last
     // announced. Called at once for a switch or a registry rebuild, and through
     // a coalescing timer for store activity.

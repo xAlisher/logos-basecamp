@@ -67,6 +67,12 @@ public:
     QString publish(const QString& app, const QVariantMap& params,
                     int* badIndex = nullptr, QStringList* ids = nullptr);
 
+    // The host publishing on `app`'s behalf: its notifications, mirrored into
+    // the feed (NotificationObjects). The same checks and the same switch, but
+    // not counted against the app's own rate, and every object in it is news
+    // again (unseen), even when it replaces one with the same key.
+    QString publishFromHost(const QString& app, const QVariantMap& params);
+
     // `{ keys: [ … ] }` or `{ all: true }`. Unknown keys are not an error.
     QString retract(const QString& app, const QVariantMap& params);
 
@@ -115,6 +121,8 @@ signals:
     void disabledAppsChanged();
 
 private:
+    QString publishBatch(const QString& app, const QVariantMap& params,
+                         int* badIndex, QStringList* ids, bool fromHost);
     qint64 now() const;
     bool allow(const QString& app);
     // Validate one envelope. Returns the cleaned object (host fields not yet

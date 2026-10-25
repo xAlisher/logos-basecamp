@@ -18,6 +18,7 @@
 #include "restricted/RestrictedUrlInterceptor.h"
 #include <utility>
 #include "NotificationCenter.h"
+#include "NotificationObjects.h"
 #include "ObjectStore.h"
 #include "ObjectResults.h"
 #include "ObjectSearch.h"
@@ -113,6 +114,8 @@ MainUIBackend::MainUIBackend(LogosAPI* logosAPI, ICoreRuntime* core,
     m_objects->setIconResolver([this](const QString& app) {
         return m_uiPluginManager->pluginIconUrl(app);
     });
+    // Notifications are cards in the home feed, published for their sender.
+    new NotificationObjects(m_notifications, m_objects, this);
     // NOT a per-publish signal. ObjectStore::changed fires on every publish,
     // retract, expiry and markSeen by any app, and searchAppsChanged reaches
     // QML (ShellApi::searchChanged) — forwarded as is, it would be a clock of
@@ -836,7 +839,7 @@ void MainUIBackend::rebuildIntentRegistry()
     // Uninstalled (or updated to stop publishing): its objects go with it.
     // After the bootstrap only — the constructor-time rebuild sees no apps.
     if (m_objects && m_intentRegistryBootstrapped)
-        m_objects->retainApps(m_intentRegistry->modulesUsing(kObjectsPublishIntent));
+        m_objects->retainApps(objectPublishers());
     refreshSearchApps();
 
     // THE COLD-START GATE, and it must skip the bootstrap call above.
@@ -1359,12 +1362,23 @@ QObject* MainUIBackend::objectStore() const
     return m_objects;
 }
 
+QStringList MainUIBackend::objectPublishers() const
+{
+    // Apps that publish, and apps that notify: their notifications are
+    // objects too (NotificationObjects), under the same Search switch.
+    QStringList apps = m_intentRegistry->modulesUsing(kObjectsPublishIntent);
+    for (const QString& name : m_intentRegistry->modulesUsing(kNotificationsPostIntent))
+        if (!apps.contains(name))
+            apps << name;
+    return apps;
+}
+
 QVariantList MainUIBackend::searchApps() const
 {
     QVariantList out;
     if (!m_intentRegistry || !m_objects)
         return out;
-    for (const QString& name : m_intentRegistry->modulesUsing(kObjectsPublishIntent)) {
+    for (const QString& name : objectPublishers()) {
         const QString display = displayNameFor(name);
         out << QVariantMap{
             { QStringLiteral("name"), name },

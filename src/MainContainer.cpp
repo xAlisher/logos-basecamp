@@ -541,19 +541,6 @@ void MainContainer::onSidebarTooltipRequested(const QString& text, qreal y)
 
 bool MainContainer::eventFilter(QObject* watched, QEvent* event)
 {
-    // An open notification list closes on a click anywhere outside it (the bell
-    // itself toggles it). The click still goes where it was aimed.
-    if (event->type() == QEvent::MouseButtonPress && m_notifyWidget) {
-        QObject* layer = m_notifyWidget->rootObject();
-        if (layer && layer->property("panelOpen").toBool()) {
-            const QPoint at = static_cast<QMouseEvent*>(event)->globalPosition().toPoint();
-            const QRect inside(m_notifyWidget->mapToGlobal(QPoint(0, 0)), m_notifyWidget->size());
-            QWidget* bell = m_tabArea ? m_tabArea->bellButton() : nullptr;
-            const QRect onBell = bell ? QRect(bell->mapToGlobal(QPoint(0, 0)), bell->size()) : QRect();
-            if (!inside.contains(at) && !onBell.contains(at))
-                QMetaObject::invokeMethod(layer, "closePanel");
-        }
-    }
     if (m_tabsLayout && tabsEdgeResize(watched, event))
         return true;
     if (m_tabsLayout && event->type() == QEvent::KeyPress) {
@@ -1515,7 +1502,7 @@ void MainContainer::setupNotifications()
                     ? m_host->backendObject()->property("notifications").value<QObject*>()
                     : nullptr;
     if (!center || !m_tabArea)
-        return;   // a host without NotificationCenter: no bell, no toasts
+        return;   // a host without NotificationCenter: no toasts
 
     // Like the dock: a translucent view sized to its content, over the page.
     // Zero height (hidden) when there is nothing to show.
@@ -1545,10 +1532,6 @@ void MainContainer::setupNotifications()
     });
     onNotificationsChanged();
     connect(m_tabArea, &TabArea::compactChanged, this, [this]() { positionNotifications(); });
-    connect(m_tabArea, &TabArea::notificationsClicked, this, [this]() {
-        if (QObject* root = m_notifyWidget->rootObject())
-            QMetaObject::invokeMethod(root, "togglePanel");
-    });
 }
 
 void MainContainer::onNotificationsChanged()
@@ -1559,15 +1542,15 @@ void MainContainer::onNotificationsChanged()
     if (!center || !m_tabArea)
         return;
     // The app in the current tab, while Basecamp is in front, is being looked
-    // at: its notifications count as read (no dot, no badge). In the
-    // background they stay unread until the user comes back.
+    // at: its notifications count as read (no dot). In the background they
+    // stay unread until the user comes back. There is no bell and no list:
+    // notifications are cards in the home feed (NotificationObjects).
     const QString current = m_tabArea->currentKey();
     const QStringList unread = center->property("unreadApps").toStringList();
     if (QGuiApplication::applicationState() == Qt::ApplicationActive && unread.contains(current)) {
         QMetaObject::invokeMethod(center, "markAppRead", Q_ARG(QString, current));
         return;   // markAppRead changed the items: this runs again
     }
-    m_tabArea->setNotificationCount(center->property("unreadCount").toInt());
     m_tabArea->setAttention(unread);
 }
 
@@ -1590,10 +1573,8 @@ void MainContainer::positionNotifications()
     const int h = qMax(1, qRound(root->property("height").toReal()));
     const int w = qRound(root->property("width").toReal());
     // Under the bar, at the right edge.
-    const int top = compact ? m_tabArea->topBarHeight() + 8
-                  : m_tabArea && m_tabArea->bellButton()
-                  ? m_tabArea->bellButton()->mapTo(this, QPoint(0, m_tabArea->bellButton()->height())).y() + 8
-                  : 52;
+    const int top = m_tabArea ? m_tabArea->mapTo(this, QPoint(0, m_tabArea->topBarHeight())).y() + 8
+                              : 52;
     if (compact && root->property("panelOpen").toBool()) {
         // The list as a sheet, just above the bottom bar (thumb reach).
         const int bottom = height() - m_tabArea->bottomBarHeight() - 8;

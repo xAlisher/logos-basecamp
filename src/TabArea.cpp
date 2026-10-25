@@ -59,53 +59,6 @@ QIcon iconFor(const QString& path)
     return QIcon(p);
 }
 
-// The bar's notification bell: a tinted bell, and the unread count as a badge.
-class BellButton : public QToolButton
-{
-public:
-    using QToolButton::QToolButton;
-    void setCount(int n) { if (n != m_count) { m_count = n; update(); } }
-    void setGlyph(int px) { m_glyph = px; update(); }
-
-protected:
-    void paintEvent(QPaintEvent* e) override
-    {
-        QToolButton::paintEvent(e);   // hover background from the style sheet
-        const int g = m_glyph;
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        const qreal dpr = devicePixelRatioF();
-        QPixmap bell = QIcon(QStringLiteral(":/qt/qml/Basecamp/Icons/Basecamp/Icons/bell.svg"))
-                           .pixmap(QSize(g, g), dpr);
-        if (!bell.isNull()) {
-            QPainter tp(&bell);
-            tp.setCompositionMode(QPainter::CompositionMode_SourceIn);
-            tp.fillRect(bell.rect(), underMouse() ? tok("text", "#FFFFFF")
-                                                  : tok("textSecondary", "#A3A3A3"));
-        }
-        const QRect r((width() - g) / 2, (height() - g) / 2, g, g);
-        p.drawPixmap(r, bell);
-        if (m_count > 0) {
-            const QString t = m_count > 9 ? QStringLiteral("9+") : QString::number(m_count);
-            QFont f = font();
-            f.setPixelSize(10);
-            f.setBold(true);
-            p.setFont(f);
-            const int w = qMax(16, QFontMetrics(f).horizontalAdvance(t) + 8);
-            const QRect badge(r.right() - 6, r.top() - 6, w, 16);
-            p.setPen(Qt::NoPen);
-            p.setBrush(tok("primary", "#ED7B58"));
-            p.drawRoundedRect(badge, 8, 8);
-            p.setPen(tok("background", "#171717"));
-            p.drawText(badge, Qt::AlignCenter, t);
-        }
-    }
-
-private:
-    int m_count = 0;
-    int m_glyph = 18;
-};
-
 // The empty part of the bar: drag to move the window, double-click to maximise.
 class DragArea : public QWidget
 {
@@ -818,15 +771,6 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     m_drag->setObjectName(QStringLiteral("basecampium.dragArea"));
     row->addWidget(m_drag, 1);
 
-    auto* bell = new BellButton(m_bar);
-    bell->setObjectName(QStringLiteral("basecampium.notifications"));
-    bell->setToolTip(tr("Notifications"));
-    bell->setFixedSize(40, 32);
-    bell->setFocusPolicy(Qt::NoFocus);
-    m_bell = bell;
-    connect(bell, &QToolButton::clicked, this, &TabArea::notificationsClicked);
-    row->addWidget(bell, 0, Qt::AlignTop);
-
 #ifndef Q_OS_MAC
     m_buttons = new QWidget(m_bar);
     auto* br = new QHBoxLayout(m_buttons);
@@ -861,7 +805,8 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
 
     // Compact layout (narrower than kCompactWidth): one bar, at the bottom
     // within thumb reach, holding everything (docs/MOBILE-LAYOUT.md §8):
-    // [ current tab · search ] [ notifications ] [ tabs ] [ menu ].
+    // [ current tab · search ] [ tabs ] [ menu ]. Notifications are in the
+    // home feed (the pill opens it), so there is no bell.
     // Its gaps move the window, like the desktop bar's empty part.
     m_bottom = new DragArea(this);
     m_bottom->setObjectName(QStringLiteral("basecampium.bottomBar"));
@@ -889,16 +834,6 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     connect(m_pillSearch, &QLineEdit::textChanged, this, &TabArea::homeQueryChanged);
     connect(m_pillSearch, &QLineEdit::returnPressed, this, &TabArea::homeQueryAccepted);
 
-    auto* bottomBell = new BellButton(m_bottom);
-    bottomBell->setObjectName(QStringLiteral("basecampium.bottomNotifications"));
-    bottomBell->setToolTip(tr("Notifications"));
-    bottomBell->setAccessibleName(tr("Notifications"));
-    bottomBell->setFixedSize(48, 48);   // touch target: 44 minimum
-    bottomBell->setFocusPolicy(Qt::NoFocus);
-    bottomBell->setGlyph(22);
-    m_bottomBell = bottomBell;
-    connect(bottomBell, &QToolButton::clicked, this, &TabArea::notificationsClicked);
-
     auto* tabsButton = new TabsButton(m_bottom);
     tabsButton->setObjectName(QStringLiteral("basecampium.tabSwitcher"));
     tabsButton->setToolTip(tr("Tabs"));
@@ -919,7 +854,6 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
 
     bottomRow->addWidget(pill, 1);
     bottomRow->addSpacing(4);
-    bottomRow->addWidget(bottomBell);
     bottomRow->addWidget(tabsButton);
     bottomRow->addWidget(menuButton);
     m_bottom->setVisible(false);
@@ -1018,7 +952,7 @@ void TabArea::applyTheme()
     m_bar->setStyleSheet(barStyleSheet());
     m_bottom->setStyleSheet(barStyleSheet());
     {
-        // A drawn "⋮", in the same tone as the bell and the tab count beside it.
+        // A drawn "⋮", in the same tone as the tab count beside it.
         const qreal dpr = devicePixelRatioF();
         QPixmap pm(QSize(24, 24) * dpr);
         pm.setDevicePixelRatio(dpr);
@@ -1568,14 +1502,6 @@ void TabArea::applyAttention()
     for (int i = 0; i < m_tabs->count(); ++i)
         if (TabLabel* l = labelAt(m_tabs, i))
             l->setDot(i != current && m_attention.contains(m_tabs->tabData(i).toString()));
-}
-
-void TabArea::setNotificationCount(int count)
-{
-    if (m_bell)
-        static_cast<BellButton*>(m_bell)->setCount(count);
-    if (m_bottomBell)
-        static_cast<BellButton*>(m_bottomBell)->setCount(count);
 }
 
 void TabArea::openHome()

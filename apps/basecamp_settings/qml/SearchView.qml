@@ -29,7 +29,7 @@ Item {
         }
         LogosText {
             Layout.fillWidth: true
-            text: qsTr("Apps that share things with search and the home screen: transactions, messages, communities and more. It stays on this device and is forgotten when Basecamp quits. Turn an app off and what it shared is deleted at once.")
+            text: qsTr("Apps that share things with search and the home screen: transactions, messages, communities, their notifications and more. It stays on this device and is forgotten when Basecamp quits. Turn an app off and what it shared is deleted at once.")
             color: Theme.palette.textSecondary
             font.pixelSize: Theme.typography.secondaryText
             wrapMode: Text.Wrap

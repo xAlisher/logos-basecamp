@@ -68,8 +68,6 @@ public:
 
     void nextTab(int delta);
     void goToTab(int index);  // -1 = last
-    // The bar's notification bell (NOTIFICATIONS-SPEC.md).
-    void setNotificationCount(int count);
     // Tabs (by key) whose app has unread notifications get a dot.
     void setAttention(const QStringList& keys);
 
@@ -82,8 +80,6 @@ public:
     void setHomePlaceholder(const QString& text);
     int bottomBarHeight() const;
     Q_INVOKABLE void showSwitcher(bool on);
-    // The bell the user sees: in the bottom bar in the compact layout.
-    QWidget* bellButton() const { return m_compact ? m_bottomBell : m_bell; }
     int topBarHeight() const;
 
     // Compact layout, one bar (docs/MOBILE-LAYOUT.md §8, after Mull): New tab
@@ -103,7 +99,6 @@ signals:
     void closeRequested(const QString& key);
     void currentKeyChanged(const QString& key);
     void newTabShown();
-    void notificationsClicked();
     void compactChanged(bool compact);
     // One bar: the bar's search on the New tab, and its Enter.
     void homeQueryChanged(const QString& text);
@@ -131,7 +126,6 @@ private:
 
     QWidget* m_bar = nullptr;
     QToolButton* m_plus = nullptr;
-    QWidget* m_bell = nullptr;
     TabStrip* m_tabs = nullptr;
     QWidget* m_drag = nullptr;
     QWidget* m_buttons = nullptr;
@@ -147,7 +141,6 @@ private:
     bool m_compact = false;
     bool m_switcherOpen = false;
     QWidget* m_bottom = nullptr;            // compact: the one bar
-    QWidget* m_bottomBell = nullptr;
     QWidget* m_pill = nullptr;              // compact: the current tab, or the search on New tab
     QLineEdit* m_pillSearch = nullptr;
     QToolButton* m_menuButton = nullptr;

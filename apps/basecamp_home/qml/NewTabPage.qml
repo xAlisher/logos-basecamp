@@ -292,45 +292,17 @@ Rectangle {
         root.startVisit()
     }
 
-    Flickable {
-        id: scroll
-        objectName: "home.scroll"
-        anchors.fill: parent
-        contentWidth: width
-        contentHeight: page.implicitHeight
-        clip: true
-        boundsBehavior: Flickable.StopAtBounds
-        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
-
-    Column {
-        id: page
-        x: root.sideMargin + (root.width - 2 * root.sideMargin - root.contentWidth) / 2
-        width: root.contentWidth
-        topPadding: root.compact ? Theme.spacing.medium : Theme.spacing.xlarge * 2
-        spacing: root.compact ? Theme.spacing.medium : Theme.spacing.large
-
-        LogosSearchBar {
-            id: search
-            objectName: "home.bar"
-            visible: !root.searchInBar
-            focus: true
-            anchors.horizontalCenter: parent.horizontalCenter
-            width: Math.min(parent.width, 720)
-            height: Theme.components.search.height
-            // The bar names what it narrows (§7).
-            placeholderText: root.barPlaceholder
-            shortcutHint: "Ctrl+K"
-            onSubmitted: root.openFirst()
-            Keys.onReturnPressed: root.openFirst()
-            Keys.onEnterPressed: root.openFirst()
-        }
-
-        // Pills: All, one per type, one per app; scrolls sideways. The view
-        // toggle (modules / feed) stays at the end.
+    // Pills: All, one per type, one per app; scrolls sideways. The view
+    // toggle (modules / feed) stays at the end. On a desktop they sit under
+    // the page's own search; on a phone, where the search is the shell's
+    // bottom bar, they sit just above it, under the thumb with the query
+    // (basecamp-experiments#34).
+    readonly property bool hasPills: root.allRows.length > 0 || root.pill !== null
+    readonly property bool pillsAtBottom: root.compact && root.searchInBar
+    Component {
+        id: pillsBar
         Item {
             objectName: "home.pills"
-            visible: root.allRows.length > 0 || root.pill !== null
-            width: parent.width
             height: Theme.minTouchTarget
 
             // A Flickable over a Row, not a ListView: every pill exists, so
@@ -385,6 +357,78 @@ Rectangle {
                 Accessible.name: root.view === "grid" ? qsTr("Show the feed") : qsTr("Show the modules")
                 onClicked: root.view = root.view === "grid" ? "feed" : "grid"
             }
+        }
+    }
+
+    // The phone's pills, docked on the page's bottom edge (the shell's
+    // search bar is just below it); the page above stops at the dock, so
+    // no card hides behind the pills.
+    Rectangle {
+        id: pillDock
+        objectName: "home.pillDock"
+        visible: root.hasPills && root.pillsAtBottom
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.bottom: parent.bottom
+        height: Theme.minTouchTarget + 2 * Theme.spacing.small
+        color: Theme.palette.background
+
+        Rectangle {
+            width: parent.width
+            height: 1
+            color: Theme.palette.borderHairline
+        }
+
+        Loader {
+            active: pillDock.visible
+            x: root.sideMargin
+            width: parent.width - 2 * root.sideMargin
+            height: Theme.minTouchTarget
+            anchors.verticalCenter: parent.verticalCenter
+            sourceComponent: pillsBar
+        }
+    }
+
+    Flickable {
+        id: scroll
+        objectName: "home.scroll"
+        anchors.fill: parent
+        anchors.bottomMargin: pillDock.visible ? pillDock.height : 0
+        contentWidth: width
+        contentHeight: page.implicitHeight
+        clip: true
+        boundsBehavior: Flickable.StopAtBounds
+        ScrollBar.vertical: ScrollBar { policy: ScrollBar.AsNeeded }
+
+    Column {
+        id: page
+        x: root.sideMargin + (root.width - 2 * root.sideMargin - root.contentWidth) / 2
+        width: root.contentWidth
+        topPadding: root.compact ? Theme.spacing.medium : Theme.spacing.xlarge * 2
+        spacing: root.compact ? Theme.spacing.medium : Theme.spacing.large
+
+        LogosSearchBar {
+            id: search
+            objectName: "home.bar"
+            visible: !root.searchInBar
+            focus: true
+            anchors.horizontalCenter: parent.horizontalCenter
+            width: Math.min(parent.width, 720)
+            height: Theme.components.search.height
+            // The bar names what it narrows (§7).
+            placeholderText: root.barPlaceholder
+            shortcutHint: "Ctrl+K"
+            onSubmitted: root.openFirst()
+            Keys.onReturnPressed: root.openFirst()
+            Keys.onEnterPressed: root.openFirst()
+        }
+
+        Loader {
+            active: root.hasPills && !root.pillsAtBottom
+            visible: active
+            width: parent.width
+            height: active ? Theme.minTouchTarget : 0
+            sourceComponent: pillsBar
         }
 
         LogosText {

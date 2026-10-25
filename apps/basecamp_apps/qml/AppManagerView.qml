@@ -23,6 +23,12 @@ Rectangle {
     // its text over when a result routes here. Goes through d.searchText so the
     // visible field and the proxy stay in step.
     function applySearch(query) { d.searchText = query }
+    // "All apps" from home: no search, every category, installed or not.
+    function showAll() {
+        d.searchText = ""
+        d.selectedCategoryIndex = 0
+        panelHeader.installStateIndex = 0
+    }
     property var repositories: []
     property bool loading: false
     property bool showUnavailable: false

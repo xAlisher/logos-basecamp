@@ -879,7 +879,7 @@ void GlassInfo::refresh()
 {
     if (!m_root || !m_widget)
         return;
-    // Works for widgets outside the root too (Spotlight floats over it).
+    // Works for widgets outside the root too (the Basecamp overlay floats over it).
     m_offset = m_widget->mapToGlobal(QPoint(0, 0)) - m_root->mapToGlobal(QPoint(0, 0));
     emit changed();
 }

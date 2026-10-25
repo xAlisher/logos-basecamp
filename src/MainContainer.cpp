@@ -8,6 +8,7 @@
 #include "DesktopArea.h"
 #include "ShellPrefs.h"
 #include "TabArea.h"
+#include "HomeOverlayGeometry.h"
 
 #include <QGuiApplication>
 #include <QQuickWidget>
@@ -50,6 +51,9 @@ constexpr int kLauncherFallbackIndex = 4;  // the `launcher` role's fallback pag
 // Home's filter pills on a phone sit on the bottom bar: a 44 px row with 8 px
 // above and below (NewTabPage.qml, home.pillDock).
 constexpr int kHomePillDockHeight = 44 + 2 * 8;
+// Desktop layout: the dock's panel (72) + 12 from the edge + a little air.
+// Maximised windows and the Basecamp overlay's panel stop above it.
+constexpr int kDockReserve = 92;
 
 // The shell's own entry points for roles ("sys:packages" in a menu or a saved
 // tab) and the role each opens (ADR-067). Empty: not a role.
@@ -514,8 +518,7 @@ void MainContainer::resizeEvent(QResizeEvent* event)
     QWidget::resizeEvent(event);
     positionDock();
     positionNotifications();
-    if (m_spotlight && m_spotlight->isVisible())
-        m_spotlight->setGeometry(rect());
+    positionHomeOverlay();
     if (m_overlayWidget) {
         m_overlayWidget->setGeometry(0, 0, width(), height());
         // Qt re-stacks siblings on resize in some cases; keep the
@@ -560,13 +563,20 @@ bool MainContainer::eventFilter(QObject* watched, QEvent* event)
         if (target == window() && tabsKey(static_cast<QKeyEvent*>(event)))
             return true;
     }
-    if (m_desktopLayout && m_spotlight && event->type() == QEvent::KeyPress) {
+    if (m_desktopLayout && m_homeScrim && event->type() == QEvent::KeyPress) {
         auto* ke = static_cast<QKeyEvent*>(event);
         const auto mods = ke->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier
                                              | Qt::AltModifier | Qt::MetaModifier);
         auto* w = qobject_cast<QWidget*>(watched);
         if (ke->key() == Qt::Key_K && mods == Qt::ControlModifier && w && w->window() == window()) {
-            toggleSpotlight();
+            toggleHomeOverlay();
+            return true;
+        }
+        // Esc closes the overlay, unless a dialog is up over it (that one's).
+        const bool dialogUp = m_overlayWidget && m_overlayWidget->isVisible();
+        if (ke->key() == Qt::Key_Escape && mods == Qt::NoModifier && homeOverlayOpen()
+            && !dialogUp && w && w->window() == window()) {
+            hideHomeOverlay();
             return true;
         }
     }
@@ -677,8 +687,9 @@ void MainContainer::onNavigateToApps()
 
 void MainContainer::onPluginWindowRequested(QWidget* widget, const QString& title)
 {
-    if (m_tabArea && widget && !m_homeApp.isEmpty() && title == m_homeApp) {
-        // The home role's app: it becomes the New tab's page, not a tab.
+    if ((m_tabArea || m_desktopLayout) && widget && !m_homeApp.isEmpty() && title == m_homeApp) {
+        // The home role's app: it becomes the New tab's page, not a tab
+        // (desktop: the Basecamp overlay's page, not a window).
         adoptHomeWidget(widget);
         return;
     }
@@ -695,6 +706,10 @@ void MainContainer::onPluginWindowRequested(QWidget* widget, const QString& titl
             return;
         }
         m_desktop->openWindow(title, resolved.isEmpty() ? title : resolved, icon, widget);
+        // An app opened from the overlay (or anywhere) is what the user
+        // wants to see now; the search ranker's window is not.
+        if (!hiddenFromWindowLists().contains(title))
+            hideHomeOverlay();
         updateDock();
         return;
     }
@@ -724,6 +739,11 @@ void MainContainer::onPluginWindowRemoveRequested(QWidget* widget)
         return;
     }
     if (m_desktopLayout) {
+        if (widget && widget == m_homeWidget) {
+            m_homeWidget = nullptr;
+            positionHomeOverlay();
+            return;
+        }
         if (AppWindow* w = m_desktop->windowFor(widget))
             m_desktop->removeWindow(w);
         updateDock();
@@ -751,8 +771,16 @@ void MainContainer::onPresentAppRequested(QWidget* widget)
     }
 
     if (m_desktopLayout) {
-        if (AppWindow* w = m_desktop->windowFor(widget))
+        if (widget == m_homeWidget) {   // "open Home" means the overlay
+            showHomeOverlay();
+            return;
+        }
+        // A card's View, a link, a launch: the app's window comes forward
+        // and the overlay it may have come from closes.
+        if (AppWindow* w = m_desktop->windowFor(widget)) {
             m_desktop->restoreAndRaise(w);
+            hideHomeOverlay();
+        }
         updateDock();
         return;
     }
@@ -798,9 +826,7 @@ void MainContainer::setupDesktopUi()
     ShellDevQml::load(m_dockWidget,
         QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/DockPanel.qml")),
         [this](QObject* root) {
-            // Basecamp opens Spotlight for now; basecamp-experiments#43
-            // swaps its content for the home app.
-            connect(root, SIGNAL(openHome()), this, SLOT(toggleSpotlight()));
+            connect(root, SIGNAL(openHome()), this, SLOT(toggleHomeOverlay()));
             connect(root, SIGNAL(launchApp(QString)), this, SLOT(launchFromDock(QString)));
             updateDock();
         });
@@ -808,52 +834,55 @@ void MainContainer::setupDesktopUi()
     connect(m_host->backendObject(), SIGNAL(rolesChanged()), this, SLOT(updateDock()));
     m_dockWidget->installEventFilter(this);
     m_dockWidget->show();
-    // Panel 72 + 12 from the edge + a little air: maximised windows stop above it.
-    m_desktop->setBottomReserve(92);
+    m_desktop->setBottomReserve(kDockReserve);
 
-    // Spotlight: the workspace's search page (search, Recently Closed,
-    // results) in spotlight mode, over the whole desktop. Ctrl+K toggles it.
-    m_spotlight = new QQuickWidget(this);
-    m_spotlight->setResizeMode(QQuickWidget::SizeRootObjectToView);
-    m_spotlight->setAttribute(Qt::WA_AlwaysStackOnTop);
-    m_spotlight->setAttribute(Qt::WA_TranslucentBackground);
-    m_spotlight->setClearColor(Qt::transparent);
-    m_spotlight->rootContext()->setContextProperty("backend", m_host->backendObject());
-    m_spotlight->engine()->addImageProvider(QStringLiteral("backdrop"), new BackdropProvider(m_desktopRoot));
-    m_spotlight->rootContext()->setContextProperty(
-        "glass", new GlassInfo(m_desktopRoot, m_spotlight, m_spotlight));
-    ShellDevQml::load(m_spotlight,
-        QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/WelcomePage.qml")),
+    // The Basecamp overlay (basecamp-experiments#43): the app filling `home`
+    // over a dimmed desktop. This view draws the dim and the panel; home's own
+    // view is placed over the panel (positionHomeOverlay). Both stack on top,
+    // above the windows and the dock.
+    m_homeScrim = new QQuickWidget(this);
+    m_homeScrim->setObjectName(QStringLiteral("desktop.homeOverlay"));
+    m_homeScrim->setResizeMode(QQuickWidget::SizeRootObjectToView);
+    m_homeScrim->setAttribute(Qt::WA_AlwaysStackOnTop);
+    m_homeScrim->setAttribute(Qt::WA_TranslucentBackground);
+    m_homeScrim->setClearColor(Qt::transparent);
+    ShellDevQml::load(m_homeScrim,
+        QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/HomeOverlay.qml")),
         [this](QObject* root) {
-            root->setProperty("spotlight", true);
-            root->setProperty("searchShortcutEnabled", false);
-            connect(root, SIGNAL(dismissRequested()), this, SLOT(hideSpotlight()));
-            connect(root, SIGNAL(reopenAppRequested(QString)), this, SLOT(spotlightReopen(QString)));
-            connect(root, SIGNAL(appActivated(QString,QString)), this, SLOT(spotlightOpenApp(QString,QString)));
-            connect(root, SIGNAL(packageActivated(QString)), this, SLOT(spotlightPackage(QString)));
-            connect(root, SIGNAL(packageInstallRequested(QString)), this, SLOT(spotlightInstall(QString)));
-            connect(root, SIGNAL(showAllResultsRequested(QString,QString)),
-                    this, SLOT(spotlightShowAll(QString,QString)));
+            connect(root, SIGNAL(dismissRequested()), this, SLOT(hideHomeOverlay()));
+            positionHomeOverlay();
         });
-    m_spotlight->hide();
+    m_homeScrim->hide();
+    // Home searches with its own field here, never the shell's bar.
+    QMetaObject::invokeMethod(m_host->backendObject(), "setHomeQuery",
+                              Q_ARG(QString, QString()), Q_ARG(bool, false));
+    // Home asks the shell to open an app or a role (ShellApi, gated to home).
+    connect(m_host->backendObject(), SIGNAL(homeLaunchRequested(QString)),
+            this, SLOT(desktopLaunchFromHome(QString)));
+    connect(m_host->backendObject(), SIGNAL(homeRoleRequested(QString)),
+            this, SLOT(desktopRoleFromHome(QString)));
+    // Loaded up front, as Basecampium does, so the overlay opens at once.
+    connect(m_host->backendObject(), SIGNAL(rolesChanged()), this, SLOT(loadHomeApp()));
+    QTimer::singleShot(0, this, &MainContainer::loadHomeApp);
+
     if (m_workspaceArea && m_workspaceArea->welcomePageWidget()
         && m_workspaceArea->welcomePageWidget()->rootObject())
         m_workspaceArea->welcomePageWidget()->rootObject()->setProperty("searchShortcutEnabled", false);
     auto* search = new QShortcut(QKeySequence(QStringLiteral("Ctrl+K")), this);
     search->setContext(Qt::ApplicationShortcut);
-    auto toggleSpotlight = [this]() { this->toggleSpotlight(); };
-    connect(search, &QShortcut::activated, this, toggleSpotlight);
+    auto toggleHome = [this]() { toggleHomeOverlay(); };
+    connect(search, &QShortcut::activated, this, toggleHome);
     // A focused text field takes Ctrl+K first (it means "delete to end of
     // line" in Qt text inputs), so the shortcut never sees it; catch the key
     // for the whole window too (eventFilter).
     qApp->installEventFilter(this);
     // Apps and the hidden Applications / Package Manager views have their
     // own Ctrl+K, which makes this one ambiguous; on the desktop the shell's wins.
-    connect(search, &QShortcut::activatedAmbiguously, this, [toggleSpotlight]() {
-        qDebug() << "MainContainer: Ctrl+K ambiguous; Spotlight takes it";
-        toggleSpotlight();
+    connect(search, &QShortcut::activatedAmbiguously, this, [toggleHome]() {
+        qDebug() << "MainContainer: Ctrl+K ambiguous; the Basecamp overlay takes it";
+        toggleHome();
     });
-    connect(m_statusBar, &DesktopStatusBar::searchClicked, this, &MainContainer::showSpotlight);
+    connect(m_statusBar, &DesktopStatusBar::searchClicked, this, &MainContainer::toggleHomeOverlay);
 
     // Full screen is the desktop's natural state; F11 leaves and re-enters it.
     auto* fullScreen = new QShortcut(QKeySequence(Qt::Key_F11), this);
@@ -908,6 +937,7 @@ void MainContainer::updateDock()
     root->setProperty("hiddenApps", hidden);
     const QString active = m_desktop->activeKey();
     root->setProperty("activeKey", active);
+    root->setProperty("homeOpen", homeOverlayOpen());
     if (!active.isEmpty() && !active.startsWith(QStringLiteral("sys:")))
         m_host->setCurrentVisibleApp(active);
 }
@@ -1052,65 +1082,98 @@ void MainContainer::onDesktopCloseRequested(const QString& key)
     m_host->unloadUiModule(key);
 }
 
-void MainContainer::showSpotlight()
+bool MainContainer::homeOverlayOpen() const
 {
-    if (!m_spotlight)
-        return;
-    m_spotlight->setGeometry(rect());
-    m_spotlight->show();
-    m_spotlight->raise();
-    m_spotlight->setFocus();
-    if (QObject* root = m_spotlight->rootObject())
-        QMetaObject::invokeMethod(root, "focusSearch");
+    return m_homeScrim && m_homeScrim->isVisible();
 }
 
-void MainContainer::hideSpotlight()
+// Keeps the overlay, and home's view over its panel, sized to the window.
+// Home's view shows only while the overlay is open.
+void MainContainer::positionHomeOverlay()
 {
-    if (!m_spotlight || !m_spotlight->isVisible())
+    if (!m_homeScrim)
         return;
-    if (QObject* root = m_spotlight->rootObject())
+    const bool open = homeOverlayOpen();
+    const int top = m_statusBar ? m_statusBar->height() : 0;
+    if (QObject* root = m_homeScrim->rootObject()) {
+        const QRect panel = HomeOverlayGeometry::panel(size(), top, kDockReserve);
+        root->setProperty("panelX", panel.x());
+        root->setProperty("panelY", panel.y());
+        root->setProperty("panelWidth", panel.width());
+        root->setProperty("panelHeight", panel.height());
+        root->setProperty("noHome", m_homeApp.isEmpty());
+    }
+    if (open) {
+        m_homeScrim->setGeometry(rect());
+        m_homeScrim->raise();
+    }
+    if (m_homeWidget) {
+        if (open) {
+            m_homeWidget->setGeometry(HomeOverlayGeometry::content(size(), top, kDockReserve));
+            m_homeWidget->show();
+            m_homeWidget->raise();
+        } else {
+            m_homeWidget->hide();
+        }
+    }
+    // A dialog asked for from home (an install) stays above it.
+    if (open && m_overlayWidget && m_overlayWidget->isVisible())
+        m_overlayWidget->raise();
+}
+
+void MainContainer::showHomeOverlay()
+{
+    if (!m_homeScrim || homeOverlayOpen())
+        return;
+    m_homeScrim->setGeometry(rect());
+    m_homeScrim->show();
+    positionHomeOverlay();
+    // Shown first, then a fresh visit (as Basecampium's New tab does): an
+    // empty search, the feed's new marks counted from now.
+    if (QObject* root = homeRoot()) {
         QMetaObject::invokeMethod(root, "clearSearch");
-    m_spotlight->hide();
+        m_homeWidget->setFocus();
+        QMetaObject::invokeMethod(root, "focusSearch");
+    }
+    updateDock();
 }
 
-void MainContainer::spotlightReopen(const QString& name)
+void MainContainer::hideHomeOverlay()
 {
-    hideSpotlight();
+    if (!homeOverlayOpen())
+        return;
+    m_homeScrim->hide();
+    positionHomeOverlay();
+    updateDock();
+}
+
+void MainContainer::toggleHomeOverlay()
+{
+    if (homeOverlayOpen())
+        hideHomeOverlay();
+    else
+        showHomeOverlay();
+}
+
+void MainContainer::desktopLaunchFromHome(const QString& name)
+{
+    hideHomeOverlay();
     launchFromDock(name);
 }
 
-void MainContainer::spotlightOpenApp(const QString& name, const QString& repositoryUrl)
+void MainContainer::desktopRoleFromHome(const QString& role)
 {
-    hideSpotlight();
-    if (AppWindow* w = m_desktop->window(name))
-        m_desktop->restoreAndRaise(w);
+    hideHomeOverlay();
+    static const QHash<QString, QString> keys = {
+        { QStringLiteral("launcher"), QStringLiteral("sys:applications") },
+        { QStringLiteral("settings"), QStringLiteral("sys:settings") },
+        { QStringLiteral("packages"), QStringLiteral("sys:packages") },
+    };
+    if (keys.contains(role))
+        openSystemApp(keys.value(role));
     else
-        invokeOpenApp(name, repositoryUrl);
+        openRole(role);
 }
-
-void MainContainer::spotlightPackage(const QString& name)
-{
-    hideSpotlight();
-    QMetaObject::invokeMethod(m_host->backendObject(), "showPackageDetails", Q_ARG(QString, name));
-}
-
-void MainContainer::spotlightInstall(const QString& name)
-{
-    hideSpotlight();
-    QMetaObject::invokeMethod(m_host->backendObject(), "requestPackageInstall", Q_ARG(QString, name));
-}
-
-void MainContainer::spotlightShowAll(const QString& typeValue, const QString& query)
-{
-    hideSpotlight();
-    if (typeValue == QStringLiteral("core")) {
-        openSystemApp(QStringLiteral("sys:packages"));
-    } else {
-        openSystemApp(QStringLiteral("sys:applications"));
-        applyAppManagerSearch(query);
-    }
-}
-
 
 // Frosted glass for an app we don't own the QML of (Package Manager): make
 // its root fill transparent and slide a glass layer underneath its content.
@@ -1129,14 +1192,6 @@ void MainContainer::applyGlass(QWidget* widget)
     new GlassItem(m_desktopRoot, qw, tint, root);
     root->setProperty("color", QColor(Qt::transparent));
     qw->setProperty("_bcGlass", true);
-}
-
-void MainContainer::toggleSpotlight()
-{
-    if (m_spotlight && m_spotlight->isVisible())
-        hideSpotlight();
-    else
-        showSpotlight();
 }
 
 
@@ -1288,18 +1343,21 @@ void MainContainer::pullHomePlaceholder()
     if (m_tabArea) m_tabArea->setHomePlaceholder(text);
 }
 
-// Loads whatever fills the `home` role into the New tab, and again whenever the
-// user assigns another app (Settings → Default apps).
+// Loads whatever fills the `home` role into the New tab (desktop: the Basecamp
+// overlay), and again whenever the user assigns another app (Settings →
+// Default apps).
 void MainContainer::loadHomeApp()
 {
-    if (!m_tabArea) return;
+    if (!m_tabArea && !m_desktopLayout) return;
     QString holder;
     if (QObject* backend = m_host->backendObject())
         QMetaObject::invokeMethod(backend, "roleHolder", Q_RETURN_ARG(QString, holder),
                                   Q_ARG(QString, QStringLiteral("home")));
     if (holder == m_homeApp && (m_homeWidget || holder.isEmpty())) {
-        m_homeStack->setCurrentIndex(m_homeWidget ? m_homeStack->indexOf(m_homeWidget)
-                                                  : (holder.isEmpty() ? 1 : 0));
+        if (m_homeStack)
+            m_homeStack->setCurrentIndex(m_homeWidget ? m_homeStack->indexOf(m_homeWidget)
+                                                      : (holder.isEmpty() ? 1 : 0));
+        positionHomeOverlay();
         return;
     }
     const QString previous = m_homeApp;
@@ -1310,15 +1368,37 @@ void MainContainer::loadHomeApp()
     if (!previous.isEmpty() && previous != holder)
         m_host->unloadUiModule(previous);
     if (holder.isEmpty()) {
-        m_homeStack->setCurrentIndex(1);
+        if (m_homeStack) m_homeStack->setCurrentIndex(1);
+        positionHomeOverlay();
         return;
     }
-    m_homeStack->setCurrentIndex(0);
+    if (m_homeStack) m_homeStack->setCurrentIndex(0);
+    positionHomeOverlay();
     m_host->loadUiModule(holder);
 }
 
 void MainContainer::adoptHomeWidget(QWidget* widget)
 {
+    if (m_desktopLayout) {
+        // Over the overlay's panel, not in a window. Its view stacks on top
+        // like the overlay itself, or the dim would be drawn over it.
+        if (m_homeWidget && m_homeWidget != widget)
+            m_homeWidget->hide();
+        m_homeWidget = widget;
+        widget->setParent(this);
+        auto* view = qobject_cast<QQuickWidget*>(widget);
+        if (!view) view = widget->findChild<QQuickWidget*>();
+        if (view) view->setAttribute(Qt::WA_AlwaysStackOnTop);
+        positionHomeOverlay();
+        if (homeOverlayOpen()) {
+            if (QObject* root = homeRoot()) {
+                QMetaObject::invokeMethod(root, "clearSearch");
+                widget->setFocus();
+                QMetaObject::invokeMethod(root, "focusSearch");
+            }
+        }
+        return;
+    }
     if (m_homeWidget && m_homeWidget != widget)
         m_homeStack->removeWidget(m_homeWidget);
     m_homeWidget = widget;

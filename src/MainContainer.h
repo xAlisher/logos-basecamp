@@ -74,14 +74,16 @@ private slots:
     void launchFromDock(const QString& name);
     void updateDock();
     void openSettingsRepositories();
-    void showSpotlight();
-    void toggleSpotlight();
-    void hideSpotlight();
-    void spotlightReopen(const QString& name);
-    void spotlightOpenApp(const QString& name, const QString& repositoryUrl);
-    void spotlightPackage(const QString& name);
-    void spotlightInstall(const QString& name);
-    void spotlightShowAll(const QString& typeValue, const QString& query);
+    // Desktop layout: the Basecamp overlay, the home app over a dimmed
+    // desktop (basecamp-experiments#43). Ctrl+K, the bar's Search and the
+    // dock's Basecamp toggle it; Esc and a click outside close it.
+    void showHomeOverlay();
+    void hideHomeOverlay();
+    void toggleHomeOverlay();
+    // Desktop layout: home asked for an app or a role; it comes up in its
+    // window and the overlay closes.
+    void desktopLaunchFromHome(const QString& name);
+    void desktopRoleFromHome(const QString& role);
     // Basecampium (tabs): the New tab page's two signals.
     void tabOpenSystem(const QString& key);
     void tabLaunchApp(const QString& name);
@@ -101,6 +103,8 @@ private:
     // ── Desktop layout (ShellPrefs::activeLayout() == "desktop") ──
     void setupDesktopUi();
     void positionDock();
+    void positionHomeOverlay();
+    bool homeOverlayOpen() const;
     QStringList hiddenFromWindowLists() const;
     void onDesktopCloseRequested(const QString& key);
     QWidget* systemAppContent(const QString& key);
@@ -126,7 +130,7 @@ private:
     bool m_desktopLayout = false;
     DesktopArea* m_desktop = nullptr;
     QQuickWidget* m_dockWidget = nullptr;
-    QQuickWidget* m_spotlight = nullptr;
+    QQuickWidget* m_homeScrim = nullptr;         // HomeOverlay.qml, under home's view
     DesktopStatusBar* m_statusBar = nullptr;
     DesktopRoot* m_desktopRoot = nullptr;
     bool m_wentFullScreen = false;

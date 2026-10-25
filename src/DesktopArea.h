@@ -200,7 +200,7 @@ private:
 };
 
 // The desktop's top bar: the λ and "Logos Basecamp" on the left; a search
-// hint (opens Spotlight) and the clock on the right.
+// hint (opens the Basecamp overlay) and the clock on the right.
 class DesktopStatusBar : public QWidget
 {
     Q_OBJECT

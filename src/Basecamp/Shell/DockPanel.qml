@@ -10,9 +10,9 @@ import Basecamp.Icons
 // shell's role apps (Applications, Package Manager, Settings) show up here
 // like any app while they have a window. The home and search role holders
 // never do. A dot marks every window; the front-most one's dot is wider. The
-// C++ side sets `windows`, `hiddenApps` and `activeKey` and places the view;
-// the root is sized to its content (SizeViewToRootObject), with room above
-// the panel for the hover label.
+// C++ side sets `windows`, `hiddenApps`, `activeKey` and `homeOpen` and
+// places the view; the root is sized to its content (SizeViewToRootObject),
+// with room above the panel for the hover label.
 Item {
     id: root
 
@@ -23,6 +23,8 @@ Item {
     // Never shown here, even while loading: the home and search role holders.
     property var hiddenApps: []
     property string activeKey: ""
+    // The Basecamp overlay is open (basecamp-experiments#43): Basecamp's dot.
+    property bool homeOpen: false
 
     signal openHome()
     signal launchApp(string name)
@@ -90,6 +92,7 @@ Item {
                 label: qsTr("Basecamp")
                 artwork: BasecampIcons.basecampTile
                 fullBleed: true
+                shown: root.homeOpen
                 onActivated: root.openHome()
             }
 
@@ -129,9 +132,11 @@ Item {
         property string artwork: ""
         property bool fullBleed: false
         property bool loading: false
+        // Open without a window (Basecamp: its overlay is up).
+        property bool shown: false
 
-        readonly property bool open: root.windows.some(function(w) { return w.key === item.key })
-        readonly property bool front: root.activeKey === key
+        readonly property bool open: shown || root.windows.some(function(w) { return w.key === item.key })
+        readonly property bool front: shown || root.activeKey === key
 
         signal activated()
 

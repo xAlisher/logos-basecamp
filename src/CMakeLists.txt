@@ -49,6 +49,7 @@ set(SOURCES
     TabArea.h
     TabArea.cpp
     AppTileIcon.h
+    HomeOverlayGeometry.h
     AppTileIcon.cpp
     ShellPrefs.h
     ShellPrefs.cpp
@@ -164,6 +165,7 @@ qt_add_qml_module(basecamp_shell_qml
         Basecamp/Shell/UninstallDialog.qml
         Basecamp/Shell/WelcomePage.qml
         Basecamp/Shell/DockPanel.qml
+        Basecamp/Shell/HomeOverlay.qml
         Basecamp/Shell/NotificationLayer.qml
 )
 

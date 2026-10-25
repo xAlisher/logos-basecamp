@@ -84,6 +84,11 @@ class ShellApi : public QObject {
     // another home app starts from nothing.
     Q_PROPERTY(QVariantMap homeSettings READ homeSettings NOTIFY homeSettingsChanged)
 
+    // ── keychain (basecamp-experiments#55) ───────────────────────────────
+    // Every registered key, the user's label and note included, grouped by
+    // owner (Keychain::allKeys rows plus ownerIcon, served by the host).
+    Q_PROPERTY(QVariantList keychainKeys READ keychainKeys NOTIFY keychainChanged)
+
 public:
     ShellApi(MainUIBackend* backend, const QString& appName, QObject* parent = nullptr);
 
@@ -124,6 +129,7 @@ public:
     bool feedOnly() const;
     QVariantList recentApps() const;
     QVariantMap homeSettings() const;
+    QVariantList keychainKeys() const;
 
     // settings
     Q_INVOKABLE void refreshRepositories();
@@ -210,6 +216,14 @@ public:
     // pills. Read when asked, never pushed.
     Q_INVOKABLE QVariantMap counts(const QString& query) const;
 
+    // ── keychain ─────────────────────────────────────────────────────────
+    // The user's own words for a key, never shown to any other app. "" clears;
+    // false for an unknown key or over 40 (label) / 500 (note) characters.
+    Q_INVOKABLE bool setKeyLabel(const QString& ownerApp, const QString& keyId, const QString& label);
+    Q_INVOKABLE bool setKeyNote(const QString& ownerApp, const QString& keyId, const QString& note);
+    // The entry leaves the directory; the signer app keeps its private key.
+    Q_INVOKABLE bool removeKey(const QString& ownerApp, const QString& keyId);
+
     // any role app: open whatever fills another role (navigation only).
     Q_INVOKABLE bool openRole(const QString& role);
 
@@ -242,6 +256,8 @@ signals:
     void searchRequested(const QString& requestId, const QString& query, const QVariantMap& filter);
     // search: what `app` published changed (the host asks again by itself).
     void objectsChanged(const QString& app);
+    // keychain: a key was registered, changed or removed.
+    void keychainChanged();
 
 private:
     bool holds(const char* role) const;

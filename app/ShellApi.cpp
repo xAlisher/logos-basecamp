@@ -2,6 +2,7 @@
 
 #include "AppSearch.h"
 #include "IntentRegistry.h"
+#include "Keychain.h"
 #include "MainUIBackend.h"
 #include "ObjectResults.h"
 #include "ObjectSearch.h"
@@ -207,6 +208,7 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         emit homeSettingsChanged();
         emit appResultsChanged();
         emit relatedAppsChanged();
+        emit keychainChanged();
     });
     connect(backend, &MainUIBackend::shellPreferencesChanged, this, &ShellApi::prefsChanged);
     connect(backend, &MainUIBackend::settingsSectionRequested, this, [this](const QString& section) {
@@ -262,6 +264,12 @@ ShellApi::ShellApi(MainUIBackend* backend, const QString& appName, QObject* pare
         connect(store, &ObjectStore::changed, this, schedule);
         connect(store, &ObjectStore::disabledAppsChanged, this, schedule);
     }
+    // Keychain: its holder alone hears that keys changed. Which apps
+    // register keys is nobody else's to observe.
+    if (Keychain* keychain = backend->keychain())
+        connect(keychain, &Keychain::keysChanged, this, [this]() {
+            if (holds("keychain")) emit keychainChanged();
+        });
     // Search: to the holder the request was made of, and only while it holds
     // the role. objectsChanged is a clock of every app's publishing; only the
     // holder, which reads across apps anyway, hears it.
@@ -583,6 +591,39 @@ void ShellApi::setBarPlaceholder(const QString& text)
 
 // Navigation any app could already ask for (basecamp.apps.launch). From home,
 // the shell also turns the New tab into whatever opens.
+// ── keychain ─────────────────────────────────────────────────────────────────
+
+QVariantList ShellApi::keychainKeys() const
+{
+    if (!holds("keychain") || !m_backend->keychain()) return {};
+    QVariantList rows = m_backend->keychain()->allKeys();
+    for (QVariant& v : rows) {
+        QVariantMap row = v.toMap();
+        row.insert(QStringLiteral("ownerIcon"),
+                   QStringLiteral("image://basecamp/appicon/") + row.value(QStringLiteral("ownerApp")).toString());
+        v = row;
+    }
+    return rows;
+}
+
+bool ShellApi::setKeyLabel(const QString& ownerApp, const QString& keyId, const QString& label)
+{
+    return holds("keychain") && m_backend->keychain()
+        && m_backend->keychain()->setKeyLabel(ownerApp, keyId, label);
+}
+
+bool ShellApi::setKeyNote(const QString& ownerApp, const QString& keyId, const QString& note)
+{
+    return holds("keychain") && m_backend->keychain()
+        && m_backend->keychain()->setKeyNote(ownerApp, keyId, note);
+}
+
+bool ShellApi::removeKey(const QString& ownerApp, const QString& keyId)
+{
+    return holds("keychain") && m_backend->keychain()
+        && m_backend->keychain()->removeEntry(ownerApp, keyId);
+}
+
 bool ShellApi::openRole(const QString& role)
 {
     if (!holdsAny()) return false;

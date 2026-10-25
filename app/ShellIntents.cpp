@@ -20,6 +20,7 @@ void registerWith(IntentRegistry* registry,
     provides += kPackageConfirmIntents;
     provides << kNotificationsPostIntent;
     provides << kObjectsPublishIntent << kObjectsRetractIntent;
+    provides += kKeychainIntents;
 
     registry->registerShellProvider(shellModuleName, provides,
                                     kNavigationIntents, displayName, iconSource);

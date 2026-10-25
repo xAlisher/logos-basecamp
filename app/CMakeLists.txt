@@ -320,6 +320,7 @@ set(PROJECT_SOURCES
     ObjectSearch.cpp
     DesktopNotifier.cpp
     ShellIntents.cpp
+    Keychain.cpp
 
     # Deep links: basecamp:// from a browser. LinkUrl.cpp is the parser and is
     # deliberately free of everything else, since it is the one part of this

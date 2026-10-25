@@ -32,6 +32,7 @@ private slots:
     void testPreRenameNamesAreGone();
     void testAppsCannotClaimTheNewNavigationIntents();
     void testObjectsActionIsRequestableByTheShellAlone();
+    void testKeychainIntentsAreTheShellsAndNotNavigation();
 
 private:
     static IntentRegistry* freshRegistry(QObject* parent)
@@ -258,6 +259,25 @@ void TestShellIntents::testObjectsActionIsRequestableByTheShellAlone()
     QVERIFY(!registry->requesterAllowed(ShellIntents::kObjectsActionIntent, QStringLiteral("forger_ui")));
     QVERIFY(registry->requesterAllowed(ShellIntents::kObjectsActionIntent, QStringLiteral("main_ui")));
     QVERIFY(!registry->requesterAllowed(ShellIntents::kObjectsActionIntent, QString()));
+}
+
+void TestShellIntents::testKeychainIntentsAreTheShellsAndNotNavigation()
+{
+    // Answered in C++ with the attested caller (basecamp-experiments#55).
+    // None of them may skip the consent a navigation intent skips, and no web
+    // page may reach one.
+    QObject owner;
+    IntentRegistry* registry = freshRegistry(&owner);
+    for (const QString& intent : ShellIntents::kKeychainIntents) {
+        QVERIFY2(logos::intent::isValidName(intent), qPrintable(intent));
+        const auto resolution = registry->resolve(intent);
+        QVERIFY2(resolution.status == IntentRegistry::Ok, qPrintable(intent));
+        QCOMPARE(resolution.found.size(), 1);
+        QCOMPARE(resolution.found.first().moduleName, QStringLiteral("main_ui"));
+        QVERIFY2(!ShellIntents::kNavigationIntents.contains(intent), qPrintable(intent));
+        QVERIFY2(!ShellIntents::kWebReachableIntents.contains(intent), qPrintable(intent));
+        QVERIFY2(!registry->isHandoff(QStringLiteral("main_ui"), intent), qPrintable(intent));
+    }
 }
 
 QTEST_MAIN(TestShellIntents)

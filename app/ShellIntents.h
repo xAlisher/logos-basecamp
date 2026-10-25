@@ -58,6 +58,29 @@ inline const QString kObjectsRetractIntent =
 // rule an app can check on its own side.
 inline const QString kObjectsActionIntent = QStringLiteral("objects.action");
 
+// Keychain, the key registry (basecamp-experiments#55; Keychain.h): a
+// directory of the public keys signer apps register. Answered in C++ like the
+// objects intents, with the caller the broker attested as the owner, never a
+// payload field. Not navigation.
+//
+// Every answer is `ok` with its outcome in `data`: the broker coerces error
+// codes it does not know (duplicate, too_many, …) to `failed`, which would
+// hide from an app why it was refused.
+//
+//   register { keyId, name, publicKey, algorithm, purposes? } -> { ok, error? }
+//   update   { keyId, name?, purposes? }                       -> { ok, error? }
+//   remove   { keyId }                                         -> { ok, error? }
+//   keys     {}                                                -> { keys: [ … ] }
+inline const QString kKeychainRole = QStringLiteral("keychain");
+inline const QString kKeychainRegisterIntent = QStringLiteral("basecamp.keychain.register");
+inline const QString kKeychainUpdateIntent   = QStringLiteral("basecamp.keychain.update");
+inline const QString kKeychainRemoveIntent   = QStringLiteral("basecamp.keychain.remove");
+inline const QString kKeychainKeysIntent     = QStringLiteral("basecamp.keychain.keys");
+inline const QStringList kKeychainIntents = {
+    kKeychainRegisterIntent, kKeychainUpdateIntent, kKeychainRemoveIntent,
+    kKeychainKeysIntent,
+};
+
 // Bring a named app forward: `{ "app": "wallet_ui" }`.
 inline const QString kAppLaunchIntent = QStringLiteral("basecamp.apps.launch");
 inline const QString kPackageManagerAppName =

@@ -15,6 +15,9 @@
 
 class ObjectResults;
 class ObjectSearch;
+class Keychain;
+#include <QHash>
+#include <QSet>
 #include <QVariantList>
 #include <QVariantMap>
 #include <QStringList>
@@ -237,6 +240,9 @@ public:
     //   shellSearch    the shell's own live results (one model, refilled on
     //                  each call), ranked by the holder like any view's.
     ObjectSearch* objectSearch() const { return m_objectSearch; }
+    // Keychain (basecamp-experiments#55): the public-key directory, for
+    // ShellApi's keychain-role members.
+    Keychain* keychain() const { return m_keychain; }
     Q_INVOKABLE QStringList searchObjects(const QString& query,
                                           const QVariantMap& filter = QVariantMap()) const;
     Q_INVOKABLE QObject* shellSearch(const QString& query,
@@ -603,6 +609,10 @@ private:
     bool m_registryDeclares(const QString& intent) const;
     void showPackageDetailsFallback(const QString& packageName);
     int beginAppLaunch(const QString& dispatchId, const QVariantMap& params);
+    // The basecamp.keychain.* shell intents, `requester` the attested caller.
+    int beginKeychainIntent(const QString& dispatchId, const QString& intent,
+                            const QVariantMap& params, const QString& requester);
+    void wireKeychain();
 
     // A link named an app that is not installed. Raises the SHELL's install
     // offer if the catalog knows the name, and does nothing at all if it does
@@ -682,6 +692,9 @@ private:
     QVariantList              m_lastSearchApps;
     class QTimer*             m_searchAppsTimer = nullptr;
     class ObjectSearch*       m_objectSearch = nullptr;
+    Keychain*                 m_keychain = nullptr;
+    // Reported uninstalled; their keys go once the metadata agrees.
+    QSet<QString>             m_keychainUninstalled;
     QPointer<ObjectResults> m_shellResults;
     // The `search` holder this backend started unseen (ensureSearchHolderRunning).
     QString                   m_backgroundSearchApp;

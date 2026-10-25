@@ -34,6 +34,8 @@
 #include "PackageCoordinator.h"
 #include "BuildInfo.h"
 #include "HomeSettingsStore.h"
+#include "InstallRegistry.h"
+#include "Keychain.h"
 #include "utils/LogosBasecampPaths.h"
 
 #include <QDebug>
@@ -451,6 +453,8 @@ void MainUIBackend::setOverlayActive(bool active)             { m_overlayActive 
 // PackageCoordinator — package_manager IPC and package-lifecycle cascade.
 void MainUIBackend::wireIntents()
 {
+    wireKeychain();
+
     // Registry rebuilds follow the UI-plugin metadata cache, which
     // PackageCoordinator already keeps fresh on every install/uninstall via its
     // event subscriptions (100 ms debounce) and on refresh(). Label and icon
@@ -603,6 +607,11 @@ void MainUIBackend::wireIntents()
                 return 1;
             }
 
+            // Keychain: the same shape, the requester again the attested
+            // caller, the owner of the keys it registers.
+            if (kKeychainIntents.contains(intent))
+                return beginKeychainIntent(dispatchId, intent, params, requesterName);
+
             if (kPackageConfirmIntents.contains(intent)) {
                 return m_packageCoordinator
                     && m_packageCoordinator->beginPackageConfirmation(
@@ -686,7 +695,8 @@ void MainUIBackend::wireIntents()
           { QStringLiteral("settings"), QStringLiteral("basecamp_settings") },
           { QStringLiteral("launcher"), QStringLiteral("basecamp_apps") },
           { QStringLiteral("home"),     QStringLiteral("basecamp_home") },
-          { QStringLiteral("search"),   QStringLiteral("basecamp_search") } },
+          { QStringLiteral("search"),   QStringLiteral("basecamp_search") },
+          { kKeychainRole,              QStringLiteral("basecamp_keychain") } },
         this);
     m_intentRegistry->setRoleHolderResolver(
         [this](const QString& role) { return m_roles->holder(role); });
@@ -1508,4 +1518,64 @@ QString MainUIBackend::raiseObjectAction(const QString& id, const QString& actio
     m_intentBroker->submitTo(m_shellEndpoint.get(), requestId, kObjectsActionIntent,
                              params, app, /*present=*/open);
     return requestId;
+}
+
+// ── Keychain (basecamp-experiments#55) ──────────────────────────────────────
+
+void MainUIBackend::wireKeychain()
+{
+    m_keychain = new Keychain(LogosBasecampPaths::baseDirectory() + QStringLiteral("/keychain.json"), this);
+    // The owner is the module name plus the catalog source the host recorded
+    // for it, when it recorded one.
+    m_keychain->setSourceResolver([this](const QString& app) {
+        return m_uiPluginManager
+            ? m_uiPluginManager->uiPluginMetadataSnapshot().value(app)
+                  .value(QStringLiteral("repositoryUrl")).toString()
+            : QString();
+    });
+    m_keychain->setNameResolver([this](const QString& app) { return displayNameFor(app); });
+
+    // Uninstalled: its keys leave the directory, label and note with them.
+    // package_manager reports an upgrade as an uninstall too, so the keys go
+    // only once the app is really absent from what is installed and nothing
+    // is installing it.
+    connect(m_packageCoordinator, &PackageCoordinator::uiPluginUninstalled, this,
+            [this](const QString& name) { if (!name.isEmpty()) m_keychainUninstalled.insert(name); });
+    connect(m_uiPluginManager, &UIPluginManager::uiPluginMetadataChanged, this, [this]() {
+        const QMap<QString, QVariantMap> installed = m_uiPluginManager->uiPluginMetadataSnapshot();
+        InstallRegistry* inFlight = m_packageCoordinator ? m_packageCoordinator->installRegistry() : nullptr;
+        for (const QString& name : QSet<QString>(m_keychainUninstalled)) {
+            if (installed.contains(name)) { m_keychainUninstalled.remove(name); continue; }
+            if (inFlight && inFlight->has(name)) continue;
+            m_keychainUninstalled.remove(name);
+            m_keychain->removeApp(name);
+        }
+    });
+}
+
+int MainUIBackend::beginKeychainIntent(const QString& dispatchId, const QString& intent,
+                                       const QVariantMap& params, const QString& requester)
+{
+    // Answered a turn later, like notifications, so the broker has finished
+    // dispatching first. Never logged.
+    const auto answer = [this, dispatchId](const QVariantMap& data) {
+        QTimer::singleShot(0, this, [this, dispatchId, data]() {
+            respondToShellIntent(dispatchId, true, data, QString());
+        });
+        return 1;
+    };
+    const QString keyId = params.value(QStringLiteral("keyId")).toString();
+
+    if (intent == kKeychainRegisterIntent)
+        return answer(m_keychain->registerKey(requester, params));
+    if (intent == kKeychainUpdateIntent) {
+        QVariantMap changes = params;
+        changes.remove(QStringLiteral("keyId"));
+        return answer(m_keychain->updateKey(requester, keyId, changes));
+    }
+    if (intent == kKeychainRemoveIntent)
+        return answer(m_keychain->removeKey(requester, keyId));
+    if (intent == kKeychainKeysIntent)
+        return answer({ { QStringLiteral("keys"), m_keychain->myKeys(requester) } });
+    return 0;
 }

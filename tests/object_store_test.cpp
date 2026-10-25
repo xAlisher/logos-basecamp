@@ -85,6 +85,7 @@ private slots:
     void testExpiredObjectsAreDropped();
     void testRetainAppsForgetsUninstalled();
     void testListFilters();
+    void testCountsOfType();
     void testSignalsCarryTheApp();
     void testEnvelopesAreCanonicalPayloads();
 
@@ -467,6 +468,35 @@ void TestObjectStore::testRetainAppsForgetsUninstalled()
     store->retainApps({ kChat });
     QCOMPARE(store->count(kWallet), 0);
     QCOMPARE(store->count(kChat), 1);
+}
+
+// The apps home names under a type pill (basecamp-experiments#36): who holds
+// objects of that type, how many, and never a switched-off app.
+void TestObjectStore::testCountsOfType()
+{
+    std::unique_ptr<ObjectStore> store(makeStore());
+    const QString explorer = QStringLiteral("explorer_ui");
+    QVariantMap msg{ { QStringLiteral("key"), QStringLiteral("m1") },
+                     { QStringLiteral("type"), QStringLiteral("message") },
+                     { QStringLiteral("title"), QStringLiteral("Ada: lunch?") } };
+    QVERIFY(store->publish(kWallet, batch({ tx(QStringLiteral("t1")), tx(QStringLiteral("t2")) })).isEmpty());
+    QVERIFY(store->publish(explorer, batch({ tx(QStringLiteral("e1")) })).isEmpty());
+    QVERIFY(store->publish(kChat, batch({ msg })).isEmpty());
+
+    QHash<QString, int> txs = store->countsOfType(QStringLiteral("transaction"));
+    QCOMPARE(txs.size(), 2);
+    QCOMPARE(txs.value(kWallet), 2);
+    QCOMPARE(txs.value(explorer), 1);
+    QCOMPARE(store->countsOfType(QStringLiteral("message")), (QHash<QString, int>{ { kChat, 1 } }));
+    QVERIFY(store->countsOfType(QStringLiteral("news")).isEmpty());
+    QVERIFY(store->countsOfType(QString()).isEmpty());
+
+    // Retracted: no longer related.
+    QVERIFY(store->retract(explorer, { { QStringLiteral("all"), true } }).isEmpty());
+    QCOMPARE(store->countsOfType(QStringLiteral("transaction")), (QHash<QString, int>{ { kWallet, 2 } }));
+    // Switched off in Settings -> Search: gone.
+    store->setEnabled(kWallet, false);
+    QVERIFY(store->countsOfType(QStringLiteral("transaction")).isEmpty());
 }
 
 void TestObjectStore::testListFilters()

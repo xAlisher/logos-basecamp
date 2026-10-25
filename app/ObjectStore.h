@@ -89,6 +89,10 @@ public:
     Q_INVOKABLE QVariantList list(const QVariantMap& filter = QVariantMap()) const;
     // Types that have at least one object, sorted.
     Q_INVOKABLE QStringList types() const;
+    // How many objects of `type` each app holds (app -> count, no zeros),
+    // switched-off apps left out: the apps home names as related to a type
+    // pill (basecamp-experiments#36).
+    QHash<QString, int> countsOfType(const QString& type) const;
     Q_INVOKABLE QVariantMap get(const QString& id) const;
     Q_INVOKABLE void markSeen(const QStringList& ids);
 

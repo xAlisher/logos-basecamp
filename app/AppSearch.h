@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QHash>
 #include <QList>
 #include <QString>
 #include <QStringList>
@@ -40,5 +41,12 @@ QList<Candidate> candidates(const QVariantList& installed, const QVariantList& c
 
 // The candidates matching `query`, best first, at most `max`.
 QList<Candidate> match(const QList<Candidate>& candidates, const QString& query, int max = 50);
+
+// Related apps under a type pill (basecamp-experiments#36): the installed
+// candidates (running or installed, never a catalog row) that hold objects of
+// the type, from `counts` (app -> how many, ObjectStore::countsOfType). Most
+// objects first, then running before installed, then title, then name.
+QList<Candidate> related(const QList<Candidate>& candidates, const QHash<QString, int>& counts,
+                         int max = 50);
 
 } // namespace AppSearch

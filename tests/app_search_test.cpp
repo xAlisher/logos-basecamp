@@ -155,6 +155,31 @@ private slots:
         QCOMPARE(all[0].title, QString("radio"));
         QCOMPARE(all[1].title, QString("zine"));
     }
+
+    // Related apps under a type pill (#36): installed apps holding objects of
+    // the type, most first; catalog rows and apps without any never.
+    void relatedInstalledOnly()
+    {
+        const auto all = AppSearch::candidates(
+            { installed("objects_wallet", "Stub Wallet"), installed("objects_explorer", "Stub Explorer", true),
+              installed("objects_chat", "Stub Chat") },
+            { catalog("eth_wallet_ui", "ETH Wallet") }, {});
+        const QHash<QString, int> counts{ { "objects_wallet", 8 }, { "objects_explorer", 5 },
+                                          { "eth_wallet_ui", 3 }, { "gone_app", 2 } };
+        const auto found = AppSearch::related(all, counts);
+        QCOMPARE(names(found), (QStringList{ "objects_wallet", "objects_explorer" }));
+        QCOMPARE(stateOf(found, "objects_explorer"), QString("running"));
+        QVERIFY(AppSearch::related(all, {}).isEmpty());
+        QCOMPARE(AppSearch::related(all, counts, 1).size(), 1);
+    }
+
+    void relatedTiesRunningThenTitle()
+    {
+        const auto all = AppSearch::candidates(
+            { installed("b_app", "Beta"), installed("a_app", "Alpha"), installed("c_app", "Gamma", true) }, {}, {});
+        const QHash<QString, int> counts{ { "a_app", 2 }, { "b_app", 2 }, { "c_app", 2 } };
+        QCOMPARE(names(AppSearch::related(all, counts)), (QStringList{ "c_app", "a_app", "b_app" }));
+    }
 };
 
 QTEST_GUILESS_MAIN(AppSearchTest)

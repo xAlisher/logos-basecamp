@@ -120,4 +120,27 @@ QList<Candidate> match(const QList<Candidate>& candidates, const QString& query,
     return out;
 }
 
+QList<Candidate> related(const QList<Candidate>& candidates, const QHash<QString, int>& counts,
+                         int max)
+{
+    if (max <= 0) return {};
+    QList<Candidate> out;
+    for (const Candidate& c : candidates) {
+        if (c.state != QLatin1String("running") && c.state != QLatin1String("installed")) continue;
+        if (counts.value(c.name) <= 0) continue;
+        out.append(c);
+    }
+    std::sort(out.begin(), out.end(), [&counts](const Candidate& a, const Candidate& b) {
+        const int ca = counts.value(a.name), cb = counts.value(b.name);
+        if (ca != cb) return ca > cb;
+        const int sa = stateOrder(a.state), sb = stateOrder(b.state);
+        if (sa != sb) return sa < sb;
+        const int byTitle = QString::compare(a.title, b.title, Qt::CaseInsensitive);
+        if (byTitle != 0) return byTitle < 0;
+        return a.name < b.name;
+    });
+    if (out.size() > max) out = out.mid(0, max);
+    return out;
+}
+
 } // namespace AppSearch

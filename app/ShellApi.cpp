@@ -5,6 +5,7 @@
 #include "MainUIBackend.h"
 #include "ObjectResults.h"
 #include "ObjectSearch.h"
+#include "ObjectStore.h"
 #include "UIPluginManager.h"
 
 #include "BasecampModelRoles.h"
@@ -453,24 +454,21 @@ bool isLocalIcon(const QString& source)
         || !source.contains(QStringLiteral("://"));
 }
 
-} // namespace
-
-QVariantList ShellApi::findApps(const QString& query)
+// Never offered as an app: home itself and the search ranker.
+QStringList homeHidden(MainUIBackend* backend)
 {
-    if (!holds("home")) return {};
-    if (query.trimmed().isEmpty()) return {};
-    // Apps not installed come from the catalog, fetched the first time
-    // anything needs it; its arrival is an appResultsChanged.
-    m_backend->requestCatalog();
-    const QVariantMap roles = m_backend->roles();
+    const QVariantMap roles = backend->roles();
     QStringList hidden;
     for (const char* role : { "home", "search" }) {
         const QString holder = roles.value(QLatin1String(role)).toString();
         if (!holder.isEmpty()) hidden << holder;
     }
-    const QList<AppSearch::Candidate> found = AppSearch::match(
-        AppSearch::candidates(m_backend->launcherApps(), catalogRows(m_backend->appsModel()), hidden),
-        query);
+    return hidden;
+}
+
+// Candidates as home's app rows: { name, title, icon, fullBleed, state }.
+QVariantList appRows(const QList<AppSearch::Candidate>& found)
+{
     QVariantList rows;
     for (const AppSearch::Candidate& c : found) {
         rows.append(QVariantMap{
@@ -483,6 +481,32 @@ QVariantList ShellApi::findApps(const QString& query)
         });
     }
     return rows;
+}
+
+} // namespace
+
+QVariantList ShellApi::findApps(const QString& query)
+{
+    if (!holds("home")) return {};
+    if (query.trimmed().isEmpty()) return {};
+    // Apps not installed come from the catalog, fetched the first time
+    // anything needs it; its arrival is an appResultsChanged.
+    m_backend->requestCatalog();
+    const QList<AppSearch::Candidate> found = AppSearch::match(
+        AppSearch::candidates(m_backend->launcherApps(), catalogRows(m_backend->appsModel()),
+                              homeHidden(m_backend)),
+        query);
+    return appRows(found);
+}
+
+QVariantList ShellApi::relatedApps(const QString& type)
+{
+    if (!holds("home") || type.isEmpty()) return {};
+    auto* store = qobject_cast<ObjectStore*>(m_backend->objectStore());
+    if (!store) return {};
+    return appRows(AppSearch::related(
+        AppSearch::candidates(m_backend->launcherApps(), {}, homeHidden(m_backend)),
+        store->countsOfType(type)));
 }
 
 void ShellApi::installApp(const QString& name)

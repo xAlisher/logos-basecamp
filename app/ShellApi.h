@@ -160,6 +160,11 @@ public:
     // otherwise (draw letters). The first query fetches the catalog; asked
     // again on appResultsChanged.
     Q_INVOKABLE QVariantList findApps(const QString& query);
+    // home: the installed apps that hold objects of `type` (a type pill,
+    // basecamp-experiments#36), most first, in findApps' row shape; apps
+    // switched off in Settings -> Search are left out. Read again when the
+    // pill's results change or on appResultsChanged.
+    Q_INVOKABLE QVariantList relatedApps(const QString& type);
     // home: install an app found by findApps, through the shell's own install
     // dialog (nothing is installed without it). The host picks the repository.
     // An installed app opens instead.

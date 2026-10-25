@@ -18,7 +18,9 @@ import "BasecampHomeModules.js" as M
 // first, then Applications, Packages and Settings, which are apps like any
 // other (basecamp-experiments#30). With a query, the Apps block instead: the
 // installed and catalog apps that match, one row each, Running or with an
-// Open or Install button (basecamp-experiments#32).
+// Open or Install button (basecamp-experiments#32). Under a type pill, the
+// same block lists the installed apps that share that type, whatever is
+// typed (basecamp-experiments#36).
 // Picking a tile asks the shell to turn the current New tab into that app; a
 // card's actions go to the app that published it. It reads only `shell`, the
 // role-gated object the host injects.
@@ -97,9 +99,20 @@ Rectangle {
     function refreshApps() {
         root.appHits = root.rawQuery.length > 0 ? (shell.findApps(root.rawQuery) || []) : []
     }
+    // Under a type pill: shell.relatedApps, the installed apps that publish
+    // that type, in the same row shape. Asked again with the pill's results
+    // (an app published or retracted) and when the host says apps changed.
+    property var relatedHits: []
+    function refreshRelated() {
+        root.relatedHits = root.pill && root.pill.type ? (shell.relatedApps(root.pill.type) || []) : []
+    }
+    // What the Apps block lists: the related apps under a type pill, the
+    // apps found for the text without a pill, nothing under an app pill.
+    readonly property var shownAppHits: !root.pill ? root.appHits
+                                      : root.pill.type ? root.relatedHits : []
     Connections {
         target: shell
-        function onAppResultsChanged() { root.refreshApps() }
+        function onAppResultsChanged() { root.refreshApps(); root.refreshRelated() }
     }
 
     function openApp(hit) {
@@ -214,6 +227,7 @@ Rectangle {
         if (root.view === "feed" && !root.pill) root.noteShown(root.feedRows.slice(0, feed.shown))
     }
     function refreshPill() {
+        root.refreshRelated()
         if (!root.pill) { root.pillRows = []; return }
         if (root.pillResults) root.pillResults.update(root.rawQuery, M.pillFilter(root.pill))
         else root.pillResults = shell.search(root.rawQuery, M.pillFilter(root.pill))
@@ -222,6 +236,7 @@ Rectangle {
     function rebuildPill() {
         if (!root.pill) return
         root.pillRows = root.rowsOf(root.pillResults)
+        root.refreshRelated()
         if (root.view === "feed") root.noteShown(root.feedRows.slice(0, feed.shown))
     }
     function rowsOf(results) {
@@ -494,7 +509,7 @@ Rectangle {
         Column {
             id: appsBlock
             objectName: "home.apps"
-            visible: root.pill === null && root.appHits.length > 0
+            visible: root.shownAppHits.length > 0
             // As wide as the search bar above it, so on a desktop the
             // buttons stay near the names.
             anchors.horizontalCenter: parent.horizontalCenter
@@ -532,7 +547,7 @@ Rectangle {
             }
 
             Repeater {
-                model: root.appHits.slice(0, root.maxAppHits)
+                model: root.shownAppHits.slice(0, root.maxAppHits)
                 delegate: AppRow {
                     required property var modelData
                     width: appsBlock.width
@@ -543,8 +558,8 @@ Rectangle {
 
         LogosText {
             objectName: "home.nothing"
-            // The Apps block is hidden under a pill, so then only the pill's
-            // own results count.
+            // Under a pill the Apps block lists related apps, not matches,
+            // so then only the pill's own results count.
             visible: root.query.length > 0
                      && (root.pill !== null || root.appHits.length === 0)
                      && (root.pill ? root.pillRows.length === 0 : root.allRows.length === 0)

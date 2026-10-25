@@ -691,6 +691,24 @@ QStringList ObjectStore::types() const
     return out;
 }
 
+QHash<QString, int> ObjectStore::countsOfType(const QString& type) const
+{
+    const_cast<ObjectStore*>(this)->purgeExpired();
+    QHash<QString, int> out;
+    if (type.isEmpty())
+        return out;
+    for (const QVariantMap& o : std::as_const(m_objects)) {
+        if (o.value(QStringLiteral("type")).toString() != type)
+            continue;
+        const QString app = o.value(QStringLiteral("app")).toString();
+        // Off already deletes an app's objects; checked again so a race with
+        // the switch never names an app the user turned off.
+        if (!app.isEmpty() && isEnabled(app))
+            ++out[app];
+    }
+    return out;
+}
+
 QVariantMap ObjectStore::get(const QString& id) const
 {
     const_cast<ObjectStore*>(this)->purgeExpired();

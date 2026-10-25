@@ -459,15 +459,15 @@ void TabStrip::mouseReleaseEvent(QMouseEvent* event)
 
 // ── Compact (phone-width) layout ────────────────────────────────────────────
 
-// The bottom bar's tab button: the number of open tabs in a rounded square, as
-// on a phone browser, with a dot when a tab other than the current one has
-// unread notifications.
+// The bottom bar's apps button: the number of open apps in a rounded square,
+// as on a phone browser's tab counter, with a dot when an app other than the
+// current one has unread notifications.
 class TabsButton : public QToolButton
 {
 public:
     explicit TabsButton(QWidget* parent) : QToolButton(parent)
     {
-        // Long-press (or right-click): the tab menu, as on a phone browser's
+        // Long-press (or right-click): the apps menu, as on a phone browser's
         // tab counter. The press that opened it doesn't also toggle the switcher.
         m_hold.setSingleShot(true);
         m_hold.setInterval(500);
@@ -716,19 +716,9 @@ private:
     bool m_dot;
 };
 
-QToolButton* bottomButton(QWidget* parent, const QString& name, const QString& tip)
-{
-    auto* b = new QToolButton(parent);
-    b->setObjectName(name);
-    b->setToolTip(tip);
-    b->setAccessibleName(tip);
-    b->setMinimumSize(64, 48);   // touch target: 44 minimum
-    b->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
-    b->setFocusPolicy(Qt::NoFocus);
-    return b;
-}
-
 // ── TabArea ─────────────────────────────────────────────────────────────────
+
+static QIcon trashIcon(const QColor& tint);
 
 TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     : QWidget(parent)
@@ -805,8 +795,9 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
 
     // Compact layout (narrower than kCompactWidth): one bar, at the bottom
     // within thumb reach, holding everything (docs/MOBILE-LAYOUT.md §8):
-    // [ current tab · search ] [ tabs ] [ menu ]. Notifications are in the
-    // home feed (the pill opens it), so there is no bell.
+    // [ current tab · search ] [ apps ]. Notifications are in the home feed
+    // (the pill opens it), so there is no bell; Applications, Packages and
+    // Settings are apps like any other, so there is no menu either.
     // Its gaps move the window, like the desktop bar's empty part.
     m_bottom = new DragArea(this);
     m_bottom->setObjectName(QStringLiteral("basecampium.bottomBar"));
@@ -836,30 +827,23 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
 
     auto* tabsButton = new TabsButton(m_bottom);
     tabsButton->setObjectName(QStringLiteral("basecampium.tabSwitcher"));
-    tabsButton->setToolTip(tr("Tabs"));
-    tabsButton->setAccessibleName(tr("Tabs"));
+    tabsButton->setToolTip(tr("Apps"));
+    tabsButton->setAccessibleName(tr("Apps"));
     tabsButton->setFixedSize(48, 48);
     tabsButton->setFocusPolicy(Qt::NoFocus);
     tabsButton->setCheckable(true);
-    tabsButton->onLongPress = [this, tabsButton]() { showBarMenu(tabsButton, true); };
+    tabsButton->onLongPress = [this, tabsButton]() { showTabsMenu(tabsButton); };
     m_tabsButton = tabsButton;
     connect(tabsButton, &QToolButton::clicked, this, [this]() { showSwitcher(!m_switcherOpen); });
-
-    QToolButton* menuButton = bottomButton(m_bottom, QStringLiteral("basecampium.menu"), tr("Menu"));
-    menuButton->setMinimumSize(0, 0);
-    menuButton->setFixedSize(40, 48);
-    menuButton->setIconSize(QSize(24, 24));
-    m_menuButton = menuButton;
-    connect(menuButton, &QToolButton::clicked, this, [this]() { showSheet(); });
 
     bottomRow->addWidget(pill, 1);
     bottomRow->addSpacing(4);
     bottomRow->addWidget(tabsButton);
-    bottomRow->addWidget(menuButton);
     m_bottom->setVisible(false);
     column->addWidget(m_bottom);
 
-    // The tab switcher: a header (count, search with many tabs, ⋮) over the cards.
+    // The app switcher: a header (count, or search with many apps) over the
+    // cards, and "Close all apps" pinned below them, always in reach.
     auto* switcher = new QWidget(this);
     switcher->setObjectName(QStringLiteral("basecampium.switcher"));
     switcher->setAttribute(Qt::WA_StyledBackground);
@@ -867,30 +851,25 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     switcherColumn->setContentsMargins(0, 0, 0, 0);
     switcherColumn->setSpacing(0);
     auto* head = new QWidget(switcher);
+    head->setMinimumHeight(50);
     auto* headRow = new QHBoxLayout(head);
-    headRow->setContentsMargins(16, 6, 6, 0);
+    headRow->setContentsMargins(16, 6, 16, 0);
     headRow->setSpacing(8);
     m_switcherCount = new QLabel(head);
     m_switcherCount->setObjectName(QStringLiteral("basecampium.switcherHeader"));
     m_switcherSearch = new QLineEdit(head);
     m_switcherSearch->setObjectName(QStringLiteral("basecampium.switcherSearch"));
-    m_switcherSearch->setPlaceholderText(tr("Search your tabs"));
-    m_switcherSearch->setAccessibleName(tr("Search your tabs"));
+    m_switcherSearch->setPlaceholderText(tr("Search your apps"));
+    m_switcherSearch->setAccessibleName(tr("Search your apps"));
     m_switcherSearch->setClearButtonEnabled(true);
     // The clear button in the shell's own ✕, not the platform's red one.
     if (auto* clear = m_switcherSearch->findChild<QAction*>(QStringLiteral("_q_qlineeditclearaction")))
         clear->setIcon(QIcon(QStringLiteral(":/qt/qml/Basecamp/Icons/Basecamp/Icons/close.svg")));
     m_switcherSearch->setVisible(false);
     connect(m_switcherSearch, &QLineEdit::textChanged, this, [this]() { rebuildSwitcher(); });
-    m_switcherMenuButton = bottomButton(head, QStringLiteral("basecampium.switcherMenu"), tr("Tab options"));
-    m_switcherMenuButton->setMinimumSize(0, 0);
-    m_switcherMenuButton->setFixedSize(44, 44);
-    m_switcherMenuButton->setIconSize(QSize(24, 24));
-    connect(m_switcherMenuButton, &QToolButton::clicked, this, [this]() { showSwitcherMenu(m_switcherMenuButton); });
     headRow->addWidget(m_switcherCount);
     headRow->addWidget(m_switcherSearch, 1);
     headRow->addStretch(0);
-    headRow->addWidget(m_switcherMenuButton);
     switcherColumn->addWidget(head);
     auto* scroll = new QScrollArea(switcher);
     scroll->setFrameShape(QFrame::NoFrame);
@@ -900,6 +879,31 @@ TabArea::TabArea(QWidget* newTabPage, QWidget* parent)
     m_switcherGrid->setAutoFillBackground(false);
     scroll->setWidget(m_switcherGrid);
     switcherColumn->addWidget(scroll, 1);
+    auto* foot = new QWidget(switcher);
+    auto* footRow = new QHBoxLayout(foot);
+    footRow->setContentsMargins(16, 8, 16, 12);
+    m_switcherCloseAll = new QToolButton(foot);
+    m_switcherCloseAll->setObjectName(QStringLiteral("basecampium.switcherCloseAll"));
+    m_switcherCloseAll->setText(tr("Close all apps"));
+    m_switcherCloseAll->setAccessibleName(tr("Close all apps"));
+    m_switcherCloseAll->setToolButtonStyle(Qt::ToolButtonTextBesideIcon);
+    m_switcherCloseAll->setIconSize(QSize(22, 22));
+    m_switcherCloseAll->setFixedHeight(48);
+    m_switcherCloseAll->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+    m_switcherCloseAll->setFocusPolicy(Qt::NoFocus);
+    m_switcherCloseAll->setCursor(Qt::PointingHandCursor);
+    connect(m_switcherCloseAll, &QToolButton::clicked, this, [this]() {
+        closeAllTabs();
+        // Closing happens through the shell; refresh once it has.
+        QTimer::singleShot(0, this, [this]() {
+            if (m_switcherOpen)
+                rebuildSwitcher();
+            updateCompactBar();
+        });
+    });
+    footRow->addWidget(m_switcherCloseAll);
+    m_switcherFoot = foot;
+    switcherColumn->addWidget(foot);
     m_switcher = switcher;
     m_stack->addWidget(m_switcher);
 
@@ -951,25 +955,13 @@ void TabArea::applyTheme()
 
     m_bar->setStyleSheet(barStyleSheet());
     m_bottom->setStyleSheet(barStyleSheet());
-    {
-        // A drawn "⋮", in the same tone as the tab count beside it.
-        const qreal dpr = devicePixelRatioF();
-        QPixmap pm(QSize(24, 24) * dpr);
-        pm.setDevicePixelRatio(dpr);
-        pm.fill(Qt::transparent);
-        QPainter p(&pm);
-        p.setRenderHint(QPainter::Antialiasing);
-        p.setPen(Qt::NoPen);
-        p.setBrush(tok("textSecondary", "#A3A3A3"));
-        for (int y : { 5, 12, 19 })
-            p.drawEllipse(QPointF(12, y), 2.2, 2.2);
-        p.end();
-        m_menuButton->setIcon(QIcon(pm));
-        m_switcherMenuButton->setIcon(QIcon(pm));
-    }
+    m_switcherCloseAll->setIcon(trashIcon(danger));
     m_switcher->setStyleSheet(barStyleSheet()
         + QStringLiteral("#basecampium\\.switcher, QScrollArea, QScrollArea > QWidget > QWidget { background: %1; }"
                          "QToolButton { border-radius: 22px; }"
+                         "QToolButton#basecampium\\.switcherCloseAll { color: %5; border: 1px solid %5; border-radius: 24px;"
+                         "  font-size: 15px; padding: 0 16px; }"
+                         "QToolButton#basecampium\\.switcherCloseAll:hover { background: %2; color: %5; }"
                          "QLineEdit#basecampium\\.switcherSearch { background: %2; border: 1px solid %3; border-radius: 18px;"
                          "  padding: 0 14px; min-height: 36px; color: %4; font-size: 14px; }"
                          // A phone-like thin scroll bar, not the desktop one with arrows.
@@ -977,7 +969,7 @@ void TabArea::applyTheme()
                          "QScrollBar::handle:vertical { background: %3; border-radius: 2px; min-height: 32px; }"
                          "QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical { height: 0; }"
                          "QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical { background: none; }")
-              .arg(css(page), css(hover), css(border), css(text)));
+              .arg(css(page), css(hover), css(border), css(text), css(danger)));
     for (int i = 0; i < m_tabs->count(); ++i)
         if (TabLabel* l = labelAt(m_tabs, i))
             l->refresh();
@@ -1037,7 +1029,7 @@ void TabArea::updateCompactBar()
     const QString key = i >= 0 ? m_tabs->tabData(i).toString() : QString();
     const bool home = isNewTabKey(key) && !m_switcherOpen;
     static_cast<OneBarPill*>(m_pill)->set(m_switcherOpen ? QIcon() : iconFor(m_icons.value(key)),
-                                          m_switcherOpen ? tr("Tabs") : m_titles.value(key, key), home);
+                                          m_switcherOpen ? tr("Apps") : m_titles.value(key, key), home);
     if (m_pillSearch->isVisible() != home) {
         m_pillSearch->setVisible(home);
         if (!home && m_pillSearch->hasFocus())
@@ -1093,13 +1085,14 @@ void TabArea::rebuildSwitcher()
     grid->setHorizontalSpacing(12);
     grid->setVerticalSpacing(12);
     const int open = contentTabCount();
-    m_switcherCount->setText(open == 0 ? tr("No open tabs")
-                             : open == 1 ? tr("1 open tab") : tr("%1 open tabs").arg(open));
-    // With many tabs, a search (IronFox's "Search your tabs"); the count makes room.
+    m_switcherCount->setText(open == 0 ? tr("No open apps")
+                             : open == 1 ? tr("1 open app") : tr("%1 open apps").arg(open));
+    // With many apps, a search (IronFox's "Search your tabs"); the count makes room.
     const QString query = m_switcherSearch->text().trimmed();
     const bool searching = open > 8 || !query.isEmpty();
     m_switcherSearch->setVisible(searching);
     m_switcherCount->setVisible(!searching);
+    m_switcherFoot->setVisible(open > 0);
 
     // New tabs are the home page, reached from the bar: not listed.
     const int current = m_tabs->currentIndex();
@@ -1578,15 +1571,6 @@ static QIcon plusIcon()
     });
 }
 
-static QIcon reopenIcon()
-{
-    return menuIcon({}, [](QPainter& p) {
-        p.drawArc(QRectF(5, 5, 14, 14), 90 * 16, 270 * 16);   // ↺ from the top, round to the left
-        p.drawLine(QPointF(12, 5), QPointF(15.5, 2.5));
-        p.drawLine(QPointF(12, 5), QPointF(15.5, 8));
-    });
-}
-
 static QIcon trashIcon(const QColor& tint)
 {
     return menuIcon({}, [](QPainter& p) {
@@ -1610,14 +1594,13 @@ static QIcon appIcon(const char* svg)
     return menuIcon(QStringLiteral(":/qt/qml/Basecamp/Icons/Basecamp/Icons/") + QLatin1String(svg));
 }
 
-// A row (icon, label) or a tile (icon over a label) in the menu sheet.
-// Destructive actions draw in the theme's error colour.
-class SheetButton : public QAbstractButton
+// A menu row (icon, label) drawn as a widget, for what a QMenu item can't do:
+// destructive actions draw in the theme's error colour.
+class MenuRow : public QAbstractButton
 {
 public:
-    enum Kind { Row, Tile };
-    SheetButton(Kind kind, const QIcon& icon, const QString& text, bool danger, QWidget* parent)
-        : QAbstractButton(parent), m_kind(kind), m_danger(danger)
+    MenuRow(const QIcon& icon, const QString& text, bool danger, QWidget* parent)
+        : QAbstractButton(parent), m_danger(danger)
     {
         setIcon(icon);
         setText(text);
@@ -1625,10 +1608,10 @@ public:
         setCursor(Qt::PointingHandCursor);
         setAttribute(Qt::WA_Hover);
         setFocusPolicy(Qt::NoFocus);
-        setFixedHeight(kind == Row ? 52 : 76);
+        setFixedHeight(52);
         setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
     }
-    QSize sizeHint() const override { return QSize(m_kind == Row ? 260 : 96, height()); }
+    QSize sizeHint() const override { return QSize(260, height()); }
 
 protected:
     void paintEvent(QPaintEvent*) override
@@ -1637,141 +1620,22 @@ protected:
         p.setRenderHint(QPainter::Antialiasing);
         const QRectF r = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
         p.setPen(Qt::NoPen);
-        if (m_kind == Tile) {
-            p.setBrush(isDown() || underMouse() ? tok("backgroundTertiary", "#2E2E2E")
-                                                : tok("backgroundSecondary", "#262626"));
-            p.drawRoundedRect(r, 16, 16);
-        } else if (isDown() || underMouse()) {
+        if (isDown() || underMouse()) {
             p.setBrush(tok("backgroundTertiary", "#2E2E2E"));
             p.drawRoundedRect(r, 12, 12);
         }
         QFont f = font();
-        if (m_kind == Row) {
-            icon().paint(&p, QRect(16, (height() - 22) / 2, 22, 22));
-            f.setPixelSize(15);
-            p.setFont(f);
-            p.setPen(m_danger ? tok("error", "#E5484D") : tok("text", "#FFFFFF"));
-            const QRect tr(52, 0, width() - 64, height());
-            p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
-                       QFontMetrics(f).elidedText(text(), Qt::ElideRight, tr.width()));
-        } else {
-            icon().paint(&p, QRect((width() - 24) / 2, 14, 24, 24));
-            f.setPixelSize(12);
-            p.setFont(f);
-            p.setPen(tok("textSecondary", "#A3A3A3"));
-            const QRect tr(4, 44, width() - 8, 22);
-            p.drawText(tr, Qt::AlignCenter, QFontMetrics(f).elidedText(text(), Qt::ElideRight, tr.width()));
-        }
+        icon().paint(&p, QRect(16, (height() - 22) / 2, 22, 22));
+        f.setPixelSize(15);
+        p.setFont(f);
+        p.setPen(m_danger ? tok("error", "#E5484D") : tok("text", "#FFFFFF"));
+        const QRect tr(52, 0, width() - 64, height());
+        p.drawText(tr, Qt::AlignVCenter | Qt::AlignLeft,
+                   QFontMetrics(f).elidedText(text(), Qt::ElideRight, tr.width()));
     }
 
 private:
-    Kind m_kind;
     bool m_danger;
-};
-
-// The ⋮ menu as a bottom sheet (IronFox, docs/MOBILE-IRONFOX.md P1): a scrim
-// over the window and a sheet from the bottom with a handle and cards. A popup
-// window of its own, because app views are out-of-process windows that draw
-// over anything inside the shell's window. Closes on a tap on the scrim, a
-// swipe down from the handle, Esc / Back, or an action.
-class BarSheet : public QWidget
-{
-public:
-    explicit BarSheet(QWidget* parent)
-        : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint | Qt::NoDropShadowWindowHint)
-    {
-        setAttribute(Qt::WA_TranslucentBackground);
-        setAttribute(Qt::WA_DeleteOnClose);
-        auto* column = new QVBoxLayout(this);
-        column->setContentsMargins(0, 0, 0, 0);
-        column->setSpacing(0);
-        column->addStretch(1);
-        m_sheet = new QWidget(this);
-        m_sheet->setObjectName(QStringLiteral("basecampium.sheet"));
-        m_body = new QVBoxLayout(m_sheet);
-        m_body->setContentsMargins(10, 26, 10, 14);
-        m_body->setSpacing(8);
-        column->addWidget(m_sheet);
-        setStyleSheet(QStringLiteral("#basecampium\\.sheetCard { background: %1; border-radius: 16px; }")
-                          .arg(css(tok("backgroundSecondary", "#262626"))));
-    }
-    // A rounded card of rows.
-    QVBoxLayout* card()
-    {
-        auto* c = new QWidget(m_sheet);
-        c->setObjectName(QStringLiteral("basecampium.sheetCard"));
-        c->setAttribute(Qt::WA_StyledBackground);
-        auto* l = new QVBoxLayout(c);
-        l->setContentsMargins(4, 4, 4, 4);
-        l->setSpacing(0);
-        m_body->addWidget(c);
-        return l;
-    }
-    // A row of tiles, each its own card.
-    QHBoxLayout* tiles()
-    {
-        auto* l = new QHBoxLayout();
-        l->setSpacing(6);
-        m_body->addLayout(l);
-        return l;
-    }
-    SheetButton* add(QBoxLayout* into, SheetButton::Kind kind, const char* name, const QIcon& icon,
-                     const QString& text, bool danger, std::function<void()> fn)
-    {
-        auto* b = new SheetButton(kind, icon, text, danger, m_sheet);
-        b->setObjectName(QString::fromLatin1(name));
-        into->addWidget(b);
-        connect(b, &QAbstractButton::clicked, this, [this, fn]() {
-            close();
-            QTimer::singleShot(0, fn);
-        });
-        return b;
-    }
-
-protected:
-    void paintEvent(QPaintEvent*) override
-    {
-        QPainter p(this);
-        p.setRenderHint(QPainter::Antialiasing);
-        const int top = m_sheet->y();
-        p.fillRect(QRect(0, 0, width(), top), QColor(0, 0, 0, 120));
-        QPainterPath sheet;   // rounded top corners only
-        sheet.addRoundedRect(QRectF(0, top, width(), height() - top + 24), 20, 20);
-        p.fillPath(sheet, tok("background", "#171717"));
-        p.setPen(QPen(tok("border", "#333333"), 1));
-        p.drawLine(QPointF(20, top + 0.5), QPointF(width() - 20, top + 0.5));
-        p.setPen(Qt::NoPen);
-        p.setBrush(tok("textSecondary", "#A3A3A3"));
-        p.drawRoundedRect(QRectF(width() / 2.0 - 18, top + 10, 36, 4), 2, 2);   // handle
-    }
-    void mousePressEvent(QMouseEvent* e) override
-    {
-        const QPoint at = e->position().toPoint();
-        if (at.y() < m_sheet->y()) {   // the scrim
-            close();
-            return;
-        }
-        m_dragFrom = at.y() < m_sheet->y() + 26 ? at.y() : -1;
-    }
-    void mouseReleaseEvent(QMouseEvent* e) override
-    {
-        if (m_dragFrom >= 0 && e->position().y() - m_dragFrom > 40)
-            close();
-        m_dragFrom = -1;
-    }
-    void keyPressEvent(QKeyEvent* e) override
-    {
-        if (e->key() == Qt::Key_Escape || e->key() == Qt::Key_Back) {
-            close();
-            return;
-        }
-        QWidget::keyPressEvent(e);
-    }
-
-private:
-    QWidget* m_sheet = nullptr;
-    QVBoxLayout* m_body = nullptr;
-    int m_dragFrom = -1;
 };
 
 // A themed dropdown with touch-size rows (a bare QMenu is a light desktop menu).
@@ -1808,7 +1672,7 @@ static void addDangerAction(QMenu* menu, const char* name, const QString& text, 
     auto* holder = new QWidget(menu);
     auto* l = new QVBoxLayout(holder);
     l->setContentsMargins(0, 0, 0, 0);
-    auto* b = new SheetButton(SheetButton::Row, trashIcon(tok("error", "#E5484D")), text, true, holder);
+    auto* b = new MenuRow(trashIcon(tok("error", "#E5484D")), text, true, holder);
     b->setObjectName(QString::fromLatin1(name));
     l->addWidget(b);
     auto* wa = new QWidgetAction(menu);
@@ -1828,86 +1692,25 @@ static void saveForTests(QWidget* w)
         w->grab().save(shot);
 }
 
-void TabArea::showBarMenu(QWidget* anchor, bool tabsOnly)
+void TabArea::showTabsMenu(QWidget* anchor)
 {
-    // The tab count's long-press menu (and, outside the sheet, the same tab
-    // actions): opens upward from its button, right-aligned. Items that don't
-    // apply are left out, not greyed.
-    QMenu* menu = styledMenu(this, tabsOnly ? QStringLiteral("basecampium.tabsMenu")
-                                            : QStringLiteral("basecampium.barMenu"));
+    // The app count's long-press menu: opens upward from its button,
+    // right-aligned. Items that don't apply are left out, not greyed.
+    QMenu* menu = styledMenu(this, QStringLiteral("basecampium.tabsMenu"));
     const QString current = currentKey();
     const bool onTab = !current.isEmpty() && !isNewTabKey(current);
-    const QIcon cross = appIcon("close.svg");
     addMenuAction(menu, "menu.newTab", plusIcon(), tr("Open Basecamp"), [this]() { openHome(); });
-    if (!tabsOnly)
-        addMenuAction(menu, "menu.reopen", reopenIcon(), tr("Reopen closed tab"),
-                      [this]() { emit reopenClosedRequested(); });
     if (onTab)
-        addMenuAction(menu, "menu.closeTab", cross, tr("Close tab"), [this, current]() {
+        addMenuAction(menu, "menu.closeTab", appIcon("close.svg"), tr("Close app"), [this, current]() {
             if (indexOf(current) >= 0)
                 emit closeRequested(current);
         });
     if (contentTabCount() > 1 || (contentTabCount() == 1 && !onTab))
-        addDangerAction(menu, "menu.closeAll", tr("Close all tabs"), [this]() { closeAllTabs(); });
+        addDangerAction(menu, "menu.closeAll", tr("Close all apps"), [this]() { closeAllTabs(); });
     menu->ensurePolished();
     const QSize hint = menu->sizeHint();
     const QPoint corner = anchor->mapToGlobal(QPoint(anchor->width(), 0));
     menu->popup(QPoint(corner.x() - hint.width(), corner.y() - hint.height() - 6));
-    qInfo() << "Basecampium: menu" << menu->objectName() << "shown" << menu->isVisible();
-    saveForTests(menu);
-}
-
-void TabArea::showSheet()
-{
-    auto* sheet = new BarSheet(this);
-    sheet->setObjectName(QStringLiteral("basecampium.menuSheet"));
-    const QString current = currentKey();
-    const bool onTab = !current.isEmpty() && !isNewTabKey(current);
-    const int open = contentTabCount();
-
-    // Tab actions; then the shell's own apps as tiles (IronFox's History ·
-    // Bookmarks · Downloads); then the destructive one, alone and red.
-    QVBoxLayout* tabs = sheet->card();
-    sheet->add(tabs, SheetButton::Row, "sheet.newTab", plusIcon(), tr("Open Basecamp"), false, [this]() { openHome(); });
-    sheet->add(tabs, SheetButton::Row, "sheet.reopen", reopenIcon(), tr("Reopen closed tab"), false,
-               [this]() { emit reopenClosedRequested(); });
-    if (onTab)
-        sheet->add(tabs, SheetButton::Row, "sheet.closeTab", appIcon("close.svg"),
-                   tr("Close %1").arg(m_titles.value(current, current)), false, [this, current]() {
-                       if (indexOf(current) >= 0)
-                           emit closeRequested(current);
-                   });
-    QHBoxLayout* apps = sheet->tiles();
-    sheet->add(apps, SheetButton::Tile, "sheet.applications", appIcon("dashboard.svg"), tr("Applications"), false,
-               [this]() { emit systemAppRequested(QStringLiteral("sys:applications")); });
-    sheet->add(apps, SheetButton::Tile, "sheet.settings", appIcon("settings.svg"), tr("Settings"), false,
-               [this]() { emit systemAppRequested(QStringLiteral("sys:settings")); });
-    sheet->add(apps, SheetButton::Tile, "sheet.packages", appIcon("module.svg"), tr("Packages"), false,
-               [this]() { emit systemAppRequested(QStringLiteral("sys:packages")); });
-    if (open > 1 || (open == 1 && !onTab)) {
-        QVBoxLayout* danger = sheet->card();
-        sheet->add(danger, SheetButton::Row, "sheet.closeAll", trashIcon(tok("error", "#E5484D")),
-                   open == 1 ? tr("Close 1 tab") : tr("Close all %1 tabs").arg(open), true,
-                   [this]() { closeAllTabs(); });
-    }
-    QWidget* top = window();
-    sheet->setGeometry(QRect(top->mapToGlobal(QPoint(0, 0)), top->size()));
-    sheet->show();
-    qInfo() << "Basecampium: menu sheet shown" << sheet->isVisible();
-    saveForTests(sheet);
-}
-
-void TabArea::showSwitcherMenu(QWidget* anchor)
-{
-    // IronFox's tab-list menu: below its button, right-aligned.
-    QMenu* menu = styledMenu(this, QStringLiteral("basecampium.switcherMenu"));
-    addMenuAction(menu, "switcher.reopen", reopenIcon(), tr("Reopen closed tab"),
-                  [this]() { emit reopenClosedRequested(); });
-    if (contentTabCount() > 0)
-        addDangerAction(menu, "switcher.closeAll", tr("Close all tabs"), [this]() { closeAllTabs(); });
-    menu->ensurePolished();
-    const QSize hint = menu->sizeHint();
-    menu->popup(anchor->mapToGlobal(QPoint(anchor->width() - hint.width(), anchor->height() + 4)));
     qInfo() << "Basecampium: menu" << menu->objectName() << "shown" << menu->isVisible();
     saveForTests(menu);
 }

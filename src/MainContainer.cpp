@@ -1168,8 +1168,6 @@ void MainContainer::setupTabsUi()
             this, SLOT(tabOpenRole(QString)));
     connect(m_host->backendObject(), SIGNAL(rolesChanged()), this, SLOT(loadHomeApp()));
     loadHomeApp();
-    connect(m_tabArea, &TabArea::reopenClosedRequested, this, &MainContainer::reopenClosedTab);
-    connect(m_tabArea, &TabArea::systemAppRequested, this, &MainContainer::tabOpenSystem);
 
     // Keys are caught for the whole window in eventFilter (tabsKey): a focused
     // text field inside an app or Settings would otherwise take Ctrl+W / Ctrl+T

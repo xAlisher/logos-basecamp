@@ -92,8 +92,6 @@ public:
     // Open tabs, not counting New tabs.
     int contentTabCount() const;
     void closeAllTabs();
-    // The ⋮ menu as a bottom sheet (docs/MOBILE-IRONFOX.md P1).
-    Q_INVOKABLE void showSheet();
 
 signals:
     void closeRequested(const QString& key);
@@ -103,8 +101,6 @@ signals:
     // One bar: the bar's search on the New tab, and its Enter.
     void homeQueryChanged(const QString& text);
     void homeQueryAccepted();
-    void reopenClosedRequested();
-    void systemAppRequested(const QString& key);
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -121,8 +117,7 @@ private:
     void setCompact(bool on);
     void updateCompactBar();
     void rebuildSwitcher();
-    void showBarMenu(QWidget* anchor, bool tabsOnly);
-    void showSwitcherMenu(QWidget* anchor);
+    void showTabsMenu(QWidget* anchor);
 
     QWidget* m_bar = nullptr;
     QToolButton* m_plus = nullptr;
@@ -143,13 +138,13 @@ private:
     QWidget* m_bottom = nullptr;            // compact: the one bar
     QWidget* m_pill = nullptr;              // compact: the current tab, or the search on New tab
     QLineEdit* m_pillSearch = nullptr;
-    QToolButton* m_menuButton = nullptr;
     QToolButton* m_tabsButton = nullptr;
     QString m_prevKey;                      // the tab shown before the current one
     QString m_returnKey;                    // the last tab that was not a New tab
-    QWidget* m_switcher = nullptr;          // compact: open tabs as cards
+    QWidget* m_switcher = nullptr;          // compact: open apps as cards
     QWidget* m_switcherGrid = nullptr;
-    QLabel* m_switcherCount = nullptr;      // "N open tabs"
-    QLineEdit* m_switcherSearch = nullptr;  // shown with many tabs
-    QToolButton* m_switcherMenuButton = nullptr;
+    QLabel* m_switcherCount = nullptr;      // "N open apps"
+    QLineEdit* m_switcherSearch = nullptr;  // shown with many apps
+    QWidget* m_switcherFoot = nullptr;      // holds "Close all apps", pinned below the cards
+    QToolButton* m_switcherCloseAll = nullptr;
 };

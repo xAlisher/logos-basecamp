@@ -443,8 +443,17 @@ private slots:
         QCOMPARE(h("columnsFor(1000)").toInt(), 3);
         QCOMPARE(h("columnsFor(1399)").toInt(), 3);
         QCOMPARE(h("columnsFor(1400)").toInt(), 4);
-        QCOMPARE(h("columnsFor(3000)").toInt(), 4);
+        QCOMPARE(h("columnsFor(1799)").toInt(), 4);
+        // Full width (no cap): a column more every 400 px, at most eight.
+        QCOMPARE(h("columnsFor(1800)").toInt(), 5);
+        QCOMPARE(h("columnsFor(2199)").toInt(), 5);
+        QCOMPARE(h("columnsFor(2200)").toInt(), 6);
+        QCOMPARE(h("columnsFor(2600)").toInt(), 7);
+        QCOMPARE(h("columnsFor(3000)").toInt(), 8);
+        QCOMPARE(h("columnsFor(5000)").toInt(), 8);
+        QCOMPARE(h("kMaxColumns").toInt(), 8);
         QCOMPARE(h("columnsFor(0)").toInt(), 1);
+        QCOMPARE(h("columnsFor(NaN)").toInt(), 1);
     }
 
     // The five defaults, from their old size and pin.
@@ -457,6 +466,23 @@ private slots:
         QCOMPARE(cells("migrateLayout(mods, 2)"),
                  QStringLiteral("transactions@0,0 2x4 | messages@0,4 1x3 | communities@1,4 1x3"
                                 " | wallet@0,7 1x2 | news@0,9 2x2"));
+        // Five and six columns (wide screens): the strip spans them all.
+        QCOMPARE(cells("migrateLayout(mods, 5)"),
+                 QStringLiteral("transactions@0,0 2x4 | messages@2,0 1x3 | communities@3,0 1x3"
+                                " | wallet@4,0 1x2 | news@0,4 5x2"));
+        QCOMPARE(cells("migrateLayout(mods, 6)"),
+                 QStringLiteral("transactions@0,0 2x4 | messages@2,0 1x3 | communities@3,0 1x3"
+                                " | wallet@4,0 1x2 | news@0,4 6x2"));
+        QCOMPARE(hs("blockFor(migrateLayout(mods, 8), 'news').w"), QStringLiteral("8"));
+        // Never arranged at 6: layoutFor derives it from the widest saved
+        // (here 4) and it stays inside the grid.
+        h("var from4 = { 4: place(migrateLayout(mods, 4), 'messages', 0, 0) }");
+        QCOMPARE(cells("layoutFor(from4, 6, mods)"), cells("fitTo(from4[4], 6)"));
+        QCOMPARE(hs("layoutFor(from4, 6, mods).blocks.every(b => b.x + b.w <= 6)"), QStringLiteral("true"));
+        // A saved 6-column layout is kept for 6 and is the widest to derive from.
+        h("var from6 = { 4: from4[4], 6: place(migrateLayout(mods, 6), 'wallet', 5, 0) }");
+        QCOMPARE(cells("layoutFor(from6, 6, mods)"), cells("from6[6]"));
+        QCOMPARE(cells("layoutFor(from6, 5, mods)"), cells("fitTo(from6[6], 5)"));
         QCOMPARE(cells("migrateLayout(mods, 1)"),
                  QStringLiteral("transactions@0,0 1x4 | messages@0,4 1x3 | communities@0,7 1x3"
                                 " | wallet@0,10 1x2 | news@0,12 1x2"));
@@ -533,9 +559,9 @@ private slots:
             for (var step = 0; step < 400; ++step) {
                 var id = ids[rnd(ids.length)]
                 var op = rnd(3)
-                if (op === 0) l = place(l, id, rnd(6) - 1, rnd(20) - 2)
-                else if (op === 1) l = resize(l, id, rnd(6), rnd(7))
-                else l = fitTo(l, 1 + rnd(4))
+                if (op === 0) l = place(l, id, rnd(10) - 1, rnd(20) - 2)
+                else if (op === 1) l = resize(l, id, rnd(10), rnd(7))
+                else l = fitTo(l, 1 + rnd(8))
                 var bad = check(l, step)
                 if (bad) return bad
             }

@@ -267,14 +267,15 @@ function stableOrder(prev, ids) {
 
 var kRowHeight = 120
 var kMinRows = 2
-var kMaxColumns = 4
+var kMaxColumns = 8
 // A module added since the layout was saved.
 var kNewBlock = { w: 1, h: 3 }
 
 // Columns for a grid `width` px wide: under 600 one, then one more every
-// 400 px, at most four.
+// 400 px (2 from 600, 3 from 1000, ... 6 from 2200), at most kMaxColumns.
 function columnsFor(width) {
-    return width >= 1400 ? 4 : width >= 1000 ? 3 : width >= 600 ? 2 : 1
+    if (!(width >= 600)) return 1
+    return Math.min(kMaxColumns, 2 + Math.floor((width - 600) / 400))
 }
 
 function cell(v, fallback) {

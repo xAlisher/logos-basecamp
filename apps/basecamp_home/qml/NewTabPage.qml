@@ -521,8 +521,7 @@ Rectangle {
         if (!f || !(root.within(f, grid) || root.within(f, editBar))) return
         Qt.callLater(() => {
             if (root.editing) return
-            const b = editHomeTop.visible ? editHomeTop : editHome
-            if (b.visible) b.forceActiveFocus(Qt.OtherFocusReason)
+            if (editHome.visible) editHome.forceActiveFocus(Qt.OtherFocusReason)
             else root.focusSearch()
         })
     }
@@ -1229,7 +1228,8 @@ Rectangle {
         // width (M.columnsFor), rows kRowHeight tall; each module covers the
         // cells of its block in the layout for that column count
         // (M.layoutFor). A width change only switches layouts, it saves none.
-        // Wider than the page's column on a big screen, so four columns fit.
+        // The whole window wide (less the side margins), wider than the
+        // page's column: a column more every 400 px, up to M.kMaxColumns.
         //
         // Edit mode (#51): every module shows, outlined, its cards inert. A
         // press and drag on one lifts it: it follows the pointer, a ghost
@@ -1241,11 +1241,13 @@ Rectangle {
         // (#52) the same way (M.resize), within M.sizeLimits; a phone has the
         // bottom one only.
 
-        // Wide screens: the grid's own heading, with Edit home beside it.
+        // Wide screens: the grid's own heading, lined up with the grid's
+        // left edge. Edit home is under the grid only (one button, not two).
         Item {
             objectName: "home.grid.heading"
             visible: grid.visible && !root.compact
-            width: parent.width
+            width: grid.width
+            x: grid.x
             height: visible ? Theme.minTouchTarget : 0
 
             LogosText {
@@ -1256,25 +1258,13 @@ Rectangle {
                 font.weight: Font.Medium
                 color: Theme.palette.textSecondary
             }
-            LogosButton {
-                id: editHomeTop
-                objectName: "home.grid.edit.top"
-                visible: !root.editing
-                anchors.right: parent.right
-                anchors.verticalCenter: parent.verticalCenter
-                height: Theme.minTouchTarget
-                text: qsTr("Edit home")
-                onClicked: root.startEdit()
-                Keys.onReturnPressed: root.startEdit()
-                Keys.onEnterPressed: root.startEdit()
-            }
         }
 
         Item {
             id: grid
             objectName: "home.grid"
             visible: root.view === "grid" && root.allRows.length > 0
-            width: Math.min(root.width - 2 * root.sideMargin, 1600)
+            width: root.width - 2 * root.sideMargin
             x: (parent.width - width) / 2
             height: visible ? gridHeight : 0
             readonly property int gap: Theme.spacing.medium

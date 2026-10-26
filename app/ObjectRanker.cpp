@@ -184,10 +184,23 @@ QStringList rank(const QVariantList& objects, const QString& query, qint64 nowMs
 
 Prepared prepare(const QVariantMap& o)
 {
+    Prepared p = prepareOrder(o);
+    prepareWords(p, o);
+    return p;
+}
+
+Prepared prepareOrder(const QVariantMap& o)
+{
     Prepared p;
     p.id = o.value(QStringLiteral("id")).toString();
     p.time = timeOf(o);
     p.seen = o.value(QStringLiteral("seen")).toBool();
+    return p;
+}
+
+void prepareWords(Prepared& p, const QVariantMap& o)
+{
+    p.title.clear(); p.keywords.clear(); p.subtitle.clear(); p.fields.clear();
     appendWords(p.title, o.value(QStringLiteral("title")).toString());
     for (const QVariant& k : o.value(QStringLiteral("keywords")).toList())
         appendWords(p.keywords, k.toString());
@@ -198,7 +211,6 @@ Prepared prepare(const QVariantMap& o)
         for (const QString& str : std::as_const(strings))
             appendWords(p.fields, str);
     }
-    return p;
 }
 
 int strength(const Prepared& o, const QString& token)

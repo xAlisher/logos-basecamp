@@ -142,7 +142,15 @@ function wordsOf(text) {
     return words.length > 0 ? " " + words.join(" ") : ""
 }
 
-function prepare(o) {
+// What an empty query needs (id, time, seen) at once; the words come from
+// prepareWords(), when the app is idle or before a query that needs them.
+function prepareOrder(o) {
+    return { id: String(o.id), time: timeOf(o), seen: !!o.seen, words: false, o: o,
+             title: "", keywords: "", subtitle: "", fields: "" }
+}
+
+function prepareWords(p) {
+    var o = p.o
     var keywords = o.keywords || []
     var kw = ""
     for (var i = 0; i < keywords.length; ++i) kw += wordsOf(keywords[i])
@@ -152,9 +160,18 @@ function prepare(o) {
         collectStrings(o.fields, strings, 0)
         for (var j = 0; j < strings.length; ++j) fieldWords += wordsOf(strings[j])
     }
-    return { id: String(o.id), title: wordsOf(o.title), keywords: kw,
-             subtitle: wordsOf(o.subtitle), fields: fieldWords,
-             time: timeOf(o), seen: !!o.seen }
+    p.title = wordsOf(o.title)
+    p.keywords = kw
+    p.subtitle = wordsOf(o.subtitle)
+    p.fields = fieldWords
+    p.words = true
+    p.o = null
+}
+
+function prepare(o) {
+    var p = prepareOrder(o)
+    prepareWords(p)
+    return p
 }
 
 function preparedStrength(p, spacedToken) {
@@ -166,7 +183,20 @@ function preparedStrength(p, spacedToken) {
 }
 
 function newIndex() {
-    return { version: 0, byId: {}, size: 0 }
+    return { version: 0, byId: {}, size: 0, waiting: [] }
+}
+
+// Splits the words of up to `max` objects still waiting (all: max < 0).
+// Returns how many still wait.
+function prepareSome(index, max) {
+    var done = 0
+    while (index.waiting.length > 0 && (max < 0 || done < max)) {
+        var p = index.byId[index.waiting.pop()]
+        if (!p || p.words) continue
+        prepareWords(p)
+        ++done
+    }
+    return index.waiting.length
 }
 
 // Applies shell.objectsSince(index.version, …) to `index`. false when
@@ -174,7 +204,7 @@ function newIndex() {
 // holder): the caller then ranks shell.objects() as before.
 function applyChanges(index, changes) {
     if (!changes || changes.version === undefined || changes.version === null) return false
-    if (changes.reset) { index.byId = {}; index.size = 0 }
+    if (changes.reset) { index.byId = {}; index.size = 0; index.waiting = [] }
     var removed = changes.removed || []
     for (var i = 0; i < removed.length; ++i) {
         if (index.byId.hasOwnProperty(removed[i])) { delete index.byId[removed[i]]; index.size -= 1 }
@@ -185,7 +215,8 @@ function applyChanges(index, changes) {
         if (!o || !o.id) continue
         var id = String(o.id)
         if (!index.byId.hasOwnProperty(id)) index.size += 1
-        index.byId[id] = prepare(o)
+        index.byId[id] = prepareOrder(o)
+        index.waiting.push(id)
     }
     index.version = changes.version
     return true
@@ -195,6 +226,7 @@ function applyChanges(index, changes) {
 function rankIndex(index, ids, query, nowMs) {
     var queryTokens = tokens(query)
     var spaced = queryTokens.map(function (t) { return " " + t })
+    if (spaced.length > 0) prepareSome(index, -1)
     var hits = []
     var consider = function (p) {
         if (!p) return

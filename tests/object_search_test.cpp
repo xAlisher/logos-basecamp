@@ -429,12 +429,19 @@ void TestObjectSearch::testJsIndexMatchesRanker()
         const QJSValue r = g.property("rankIndex").call({ index, ids, QJSValue(q), QJSValue(double(kNow)) });
         return r.toVariant().toStringList();
     };
+    // Words split a few at a time (idle) or all before a query that needs
+    // them: the same answers either way, and an empty query needs none.
+    QCOMPARE(index.property("waiting").property("length").toInt(), objects.size());
+    QCOMPARE(ranked(QJSValue(QJSValue::NullValue), QString()), ObjectRanker::rank(objects, QString(), kNow));
+    QCOMPARE(index.property("waiting").property("length").toInt(), objects.size());
+    QCOMPARE(g.property("prepareSome").call({ index, QJSValue(4) }).toInt(), objects.size() - 4);
     for (const QString& q : kFixtureQueries) {
         QCOMPARE(ranked(QJSValue(QJSValue::NullValue), q), ObjectRanker::rank(objects, q, kNow));
         // And the JS ranker over the envelopes agrees too.
         const QJSValue r = g.property("rank").call({ js.toScriptValue(objects), QJSValue(q), QJSValue(double(kNow)) });
         QCOMPARE(r.toVariant().toStringList(), ObjectRanker::rank(objects, q, kNow));
     }
+    QCOMPARE(index.property("waiting").property("length").toInt(), 0);
     const QVariantList subset = objects.mid(1, 6);
     QVariantList subsetIds;
     for (const QVariant& v : subset) subsetIds << v.toMap().value("id");
@@ -1015,6 +1022,9 @@ void TestObjectSearch::testKeptCopyNothingStaleAfterAFlood()
             QCOMPARE(store->publish(app, batch(objs)), QString());
         }
         check(round == 0 ? "first flood round" : "after eviction");
+        // The host splits waiting words while idle; nothing changes for it.
+        QTest::qWait(30);
+        check("after idle preparation");
     }
     QCOMPARE(store->total(), 5 * ObjectStore::kMaxObjectsPerApp);
 

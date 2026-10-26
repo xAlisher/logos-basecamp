@@ -28,9 +28,22 @@ Rectangle {
     function rank(query, filter) {
         const changes = typeof shell.objectsSince === "function"
                         ? shell.objectsSince(root.index.version, filter) : null
-        if (Ranker.applyChanges(root.index, changes))
-            return Ranker.rankIndex(root.index, changes.ids || null, query, Date.now())
+        if (Ranker.applyChanges(root.index, changes)) {
+            const ids = Ranker.rankIndex(root.index, changes.ids || null, query, Date.now())
+            if (root.index.waiting.length > 0) prepareTimer.start()
+            return ids
+        }
         return Ranker.rank(shell.objects(filter), query, Date.now())
+    }
+    // New objects' words are split a few hundred at a time while idle, so
+    // the refresh after a flood (often an empty bar, which needs no words)
+    // does not split 2500 objects' words at once. A query that needs them
+    // splits whatever is still waiting first.
+    Timer {
+        id: prepareTimer
+        interval: 0
+        repeat: true
+        onTriggered: if (Ranker.prepareSome(root.index, 250) === 0) stop()
     }
     // Losing the role (or getting it back) starts over.
     onGrantedChanged: root.index = Ranker.newIndex()

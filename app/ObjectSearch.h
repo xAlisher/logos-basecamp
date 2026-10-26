@@ -157,11 +157,20 @@ private:
     // The host's own prepared copy of the store, for counts() and the
     // fallback ranker: brought up to date from the store's changes before
     // each use, so a query never splits every object's words again.
+    // An object's words are split when the host is idle (a few hundred per
+    // turn of the event loop) or, at the latest, before a query that needs
+    // them: a flood's refresh with an empty bar does not split 2500 objects'
+    // words in one go.
     struct Indexed {
         ObjectRanker::Prepared prepared;
         QString type, app;
+        QVariantMap envelope;   // until its words are split
+        bool ready = false;
     };
+    static constexpr int kPrepareChunk = 250;
     void syncIndex() const;
+    // Split the words of up to `max` objects still waiting (all: -1).
+    void prepareWords(int max) const;
 
     ObjectStore* m_store;
     HolderFn m_holderOf;
@@ -176,4 +185,6 @@ private:
     QString m_lastRanker;
     mutable QHash<QString, Indexed> m_index;
     mutable quint64 m_indexVersion = 0;
+    mutable QStringList m_unprepared;   // ids waiting for their words
+    QTimer* m_prepareTimer = nullptr;
 };

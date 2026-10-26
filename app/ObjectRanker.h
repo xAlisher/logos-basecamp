@@ -76,6 +76,11 @@ struct Prepared {
     bool seen = false;
 };
 Prepared prepare(const QVariantMap& object);
+// prepare() in two steps: what an empty query needs (id, time, seen) at once,
+// the words later (ObjectSearch splits them when idle, or before a query
+// that needs them). A Prepared without its words matches no token.
+Prepared prepareOrder(const QVariantMap& object);
+void prepareWords(Prepared& prepared, const QVariantMap& object);
 int strength(const Prepared& object, const QString& token);
 double score(const Prepared& object, const QStringList& queryTokens, qint64 nowMs);
 // rank() over prepared objects (pointers, so a caller ranks a subset of its

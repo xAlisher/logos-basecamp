@@ -42,6 +42,14 @@ ObjectSearch::ObjectSearch(ObjectStore* store, HolderFn holderOf, QObject* paren
         refreshFor(std::exchange(m_changedApps, {}));
         refreshSeen(std::exchange(m_seenIds, {}));
     });
+    m_prepareTimer = new QTimer(this);
+    m_prepareTimer->setInterval(0);
+    connect(m_prepareTimer, &QTimer::timeout, this, [this]() {
+        syncIndex();
+        prepareWords(kPrepareChunk);
+        if (m_unprepared.isEmpty())
+            m_prepareTimer->stop();
+    });
     if (m_store) {
         connect(m_store, &ObjectStore::objectsChanged, this, [this](const QString& app) {
             emit objectsChanged(app);
@@ -156,6 +164,8 @@ QVariantMap ObjectSearch::counts(const QString& viewApp, const QString& query) c
     QHash<QString, int> byType, byApp;
     int total = 0;
     syncIndex();
+    if (!tokens.isEmpty())
+        prepareWords(-1);
     for (const Indexed& o : std::as_const(m_index)) {
         if (!tokens.isEmpty() && ObjectRanker::score(o.prepared, tokens, 0) < 0)
             continue;
@@ -220,13 +230,32 @@ void ObjectSearch::syncIndex() const
         m_index.clear();
     for (const QString& id : c.removed)
         m_index.remove(id);
+    if (c.reset)
+        m_unprepared.clear();
     for (const QVariantMap& o : c.changed) {
         const QString id = o.value(QStringLiteral("id")).toString();
-        m_index.insert(id, Indexed{ ObjectRanker::prepare(o),
+        m_index.insert(id, Indexed{ ObjectRanker::prepareOrder(o),
                                     o.value(QStringLiteral("type")).toString(),
-                                    o.value(QStringLiteral("app")).toString() });
+                                    o.value(QStringLiteral("app")).toString(), o, false });
+        m_unprepared << id;
     }
     m_indexVersion = c.version;
+    if (!m_unprepared.isEmpty() && !m_prepareTimer->isActive())
+        m_prepareTimer->start();
+}
+
+void ObjectSearch::prepareWords(int max) const
+{
+    int done = 0;
+    while (!m_unprepared.isEmpty() && (max < 0 || done < max)) {
+        const auto it = m_index.find(m_unprepared.takeLast());
+        if (it == m_index.end() || it->ready)
+            continue;   // gone, or a later change already queued it again
+        ObjectRanker::prepareWords(it->prepared, it->envelope);
+        it->envelope = QVariantMap();
+        it->ready = true;
+        ++done;
+    }
 }
 
 bool ObjectSearch::answer(const QString& app, const QString& requestId, const QVariantList& ids)
@@ -280,6 +309,8 @@ QStringList ObjectSearch::rankWithFallback(const QString& query, const QVariantM
 {
     if (!m_store) return {};
     syncIndex();
+    if (!ObjectRanker::tokens(query).isEmpty())
+        prepareWords(-1);
     const QVariantMap clean = sanitizeFilter(filter);
     QList<const ObjectRanker::Prepared*> objects;
     if (clean.isEmpty()) {

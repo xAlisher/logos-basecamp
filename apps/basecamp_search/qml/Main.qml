@@ -39,14 +39,11 @@ Rectangle {
     // the refresh after a flood (often an empty bar, which needs no words)
     // does not split 2500 objects' words at once. A query that needs them
     // splits whatever is still waiting first. Qt.callLater, one turn of the
-    // event loop per step: this app has no window, and a QML Timer here
-    // never fired (it follows the animation timer).
+    // event loop per step: this app runs without a window, and a QML Timer
+    // here did not fire in the headless test (the words were never ready).
     function prepareStep() {
-        if (Ranker.prepareSome(root.index, 250) > 0) {
+        if (Ranker.prepareSome(root.index, 250) > 0)
             Qt.callLater(root.prepareStep)
-            return
-        }
-        console.info("basecamp_search: words ready for", root.index.size, "objects")
     }
     // Losing the role (or getting it back) starts over.
     onGrantedChanged: root.index = Ranker.newIndex()

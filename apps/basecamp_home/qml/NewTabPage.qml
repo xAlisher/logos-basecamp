@@ -55,6 +55,15 @@ Rectangle {
     // With a result focused from the keyboard (#48), Esc first takes the
     // focus back to the field, the text kept.
     // In edit mode Esc cancels it first (#51).
+    // Esc or Back at phone width: the shell's Back asks this first, so one
+    // press leaves edit mode and home stays on screen.
+    function escapeEdit() {
+        if (!root.editing)
+            return false
+        root.cancelEdit()
+        return true
+    }
+
     function escapeSearch() {
         if (root.editing) {
             root.cancelEdit()
@@ -484,7 +493,7 @@ Rectangle {
         let mods = root.editModules
         for (const id in root.notifyDraft)
             mods = M.updateModule(mods, id, { notify: root.notifyDraft[id] })
-        root.layouts = root.draft
+        root.layouts = M.pruneLayouts(root.draft, mods)
         root.editing = false
         root.removedDraft = []
         root.notifyDraft = ({})

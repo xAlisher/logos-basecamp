@@ -518,6 +518,20 @@ function withoutHidden(layout, hiddenIds) {
     return fitTo({ columns: layout.columns, blocks: shown }, layout.columns)
 }
 
+// Saved layouts (column count -> layout) without blocks for modules that are
+// gone, so a module added later with a removed one's id starts fresh.
+function pruneLayouts(layouts, modules) {
+    var ids = (modules || []).map(function (m) { return m.id })
+    var out = {}
+    for (var k in (layouts || {})) {
+        var l = layouts[k]
+        if (!l || !Array.isArray(l.blocks)) continue
+        out[k] = { columns: l.columns, blocks: l.blocks.filter(function (b) {
+            return b && ids.indexOf(b.id) >= 0 }) }
+    }
+    return out
+}
+
 // How many rows the layout takes.
 function rowsOf(layout) {
     var rows = 0

@@ -582,6 +582,11 @@ private slots:
         QCOMPARE(hs("JSON.stringify(blockFor(withNew, 'custom-1'))"),
                  QStringLiteral("{\"id\":\"custom-1\",\"x\":0,\"y\":11,\"w\":1,\"h\":3}"));
         QCOMPARE(hs("readingOrder(withNew.blocks).pop().id"), QStringLiteral("custom-1"));
+        // Done after a remove saves no block for the removed module.
+        h("var pruned = pruneLayouts(saved, fewer)");
+        QVERIFY(h("blockFor(pruned[2], 'messages') === null && blockFor(pruned[4], 'messages') === null").toBool());
+        QVERIFY(h("blockFor(pruned[2], 'wallet') !== null").toBool());
+        QCOMPARE(hs("JSON.stringify(pruneLayouts({ 2: null, 3: { columns: 3 } }, mods))"), QStringLiteral("{}"));
         // A broken saved layout is cleaned: bad blocks clamped, duplicates
         // and unknown ids dropped, overlaps settled.
         h("var junk = { 2: { columns: 2, blocks: [{ id: 'news', x: -3, y: 0, w: 9, h: 0 },"

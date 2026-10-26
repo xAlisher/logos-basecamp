@@ -30,7 +30,7 @@ Rectangle {
                         ? shell.objectsSince(root.index.version, filter) : null
         if (Ranker.applyChanges(root.index, changes)) {
             const ids = Ranker.rankIndex(root.index, changes.ids || null, query, Date.now())
-            if (root.index.waiting.length > 0) prepareTimer.start()
+            if (root.index.waiting.length > 0) Qt.callLater(root.prepareStep)
             return ids
         }
         return Ranker.rank(shell.objects(filter), query, Date.now())
@@ -38,16 +38,15 @@ Rectangle {
     // New objects' words are split a few hundred at a time while idle, so
     // the refresh after a flood (often an empty bar, which needs no words)
     // does not split 2500 objects' words at once. A query that needs them
-    // splits whatever is still waiting first.
-    Timer {
-        id: prepareTimer
-        interval: 0
-        repeat: true
-        onTriggered: {
-            if (Ranker.prepareSome(root.index, 250) > 0) return
-            stop()
-            console.info("basecamp_search: words ready for", root.index.size, "objects")
+    // splits whatever is still waiting first. Qt.callLater, one turn of the
+    // event loop per step: this app has no window, and a QML Timer here
+    // never fired (it follows the animation timer).
+    function prepareStep() {
+        if (Ranker.prepareSome(root.index, 250) > 0) {
+            Qt.callLater(root.prepareStep)
+            return
         }
+        console.info("basecamp_search: words ready for", root.index.size, "objects")
     }
     // Losing the role (or getting it back) starts over.
     onGrantedChanged: root.index = Ranker.newIndex()

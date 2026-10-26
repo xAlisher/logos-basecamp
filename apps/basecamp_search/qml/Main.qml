@@ -43,7 +43,11 @@ Rectangle {
         id: prepareTimer
         interval: 0
         repeat: true
-        onTriggered: if (Ranker.prepareSome(root.index, 250) === 0) stop()
+        onTriggered: {
+            if (Ranker.prepareSome(root.index, 250) > 0) return
+            stop()
+            console.info("basecamp_search: words ready for", root.index.size, "objects")
+        }
     }
     // Losing the role (or getting it back) starts over.
     onGrantedChanged: root.index = Ranker.newIndex()
@@ -55,7 +59,11 @@ Rectangle {
     Connections {
         target: root.granted ? shell : null
         function onSearchRequested(requestId, query, filter) {
+            const started = Date.now()
             const ids = root.rank(query, filter)
+            const took = Date.now() - started
+            if (took > 30)
+                console.info("basecamp_search: ranking took", took, "ms for", root.index.size, "objects")
             if (shell.answer(requestId, ids)) {
                 root.answered += 1
                 root.lastQuery = query

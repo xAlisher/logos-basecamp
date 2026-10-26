@@ -527,8 +527,10 @@ function pruneLayouts(layouts, widgets) {
     var out = {}
     for (var k in (layouts || {})) {
         var l = layouts[k]
-        if (!l || !Array.isArray(l.blocks)) continue
-        out[k] = { columns: l.columns, blocks: l.blocks.filter(function (b) {
+        // A layout read back from the saved settings has its blocks as a
+        // list from C++, which Array.isArray() says no to (arr takes it).
+        if (!l || typeof l !== "object" || !l.blocks || typeof l.blocks !== "object") continue
+        out[k] = { columns: l.columns, blocks: arr(l.blocks).filter(function (b) {
             return b && ids.indexOf(b.id) >= 0 }) }
     }
     return out

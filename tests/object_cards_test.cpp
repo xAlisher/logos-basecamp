@@ -619,6 +619,12 @@ private slots:
         QVERIFY(h("blockFor(pruned[2], 'messages') === null && blockFor(pruned[4], 'messages') === null").toBool());
         QVERIFY(h("blockFor(pruned[2], 'wallet') !== null").toBool());
         QCOMPARE(hs("JSON.stringify(pruneLayouts({ 2: null, 3: { columns: 3 } }, ws))"), QStringLiteral("{}"));
+        // Layouts read back from the settings (lists from C++, not JS arrays)
+        // are kept by Done, not dropped.
+        h("var fromCpp = { 3: { columns: 3, blocks: { length: 2, 0: { id: 'news', x: 0, y: 0, w: 1, h: 4 },"
+          " 1: { id: 'messages', x: 1, y: 0, w: 2, h: 2 } } } }");
+        QCOMPARE(hs("JSON.stringify(pruneLayouts(fromCpp, fewer)[3].blocks.map(function (b) { return b.id }))"),
+                 QStringLiteral("[\"news\"]"));
         // A broken saved layout is cleaned: bad blocks clamped, duplicates
         // and unknown ids dropped, overlaps settled.
         h("var junk = { 2: { columns: 2, blocks: [{ id: 'news', x: -3, y: 0, w: 9, h: 0 },"

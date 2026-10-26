@@ -155,13 +155,13 @@ QVariantMap ObjectSearch::counts(const QString& viewApp, const QString& query) c
     const QStringList tokens = ObjectRanker::tokens(query);
     QHash<QString, int> byType, byApp;
     int total = 0;
-    for (const QVariant& v : m_store->list({})) {
-        const QVariantMap o = v.toMap();
-        if (!tokens.isEmpty() && ObjectRanker::score(o, tokens, 0) < 0)
+    syncIndex();
+    for (const Indexed& o : std::as_const(m_index)) {
+        if (!tokens.isEmpty() && ObjectRanker::score(o.prepared, tokens, 0) < 0)
             continue;
         ++total;
-        ++byType[o.value(QStringLiteral("type")).toString()];
-        ++byApp[o.value(QStringLiteral("app")).toString()];
+        ++byType[o.type];
+        ++byApp[o.app];
     }
     auto sorted = [](const QHash<QString, int>& counts, const QString& key) {
         QList<QPair<QString, int>> list;
@@ -185,6 +185,48 @@ QVariantList ObjectSearch::objects(const QString& app, const QVariantMap& filter
     if (!m_store || app.isEmpty() || app != holder())
         return {};
     return m_store->list(sanitizeFilter(filter));
+}
+
+QVariantMap ObjectSearch::objectsSince(const QString& app, double version,
+                                       const QVariantMap& filter) const
+{
+    if (!m_store || app.isEmpty() || app != holder())
+        return {};
+    const quint64 since = version > 0 ? quint64(version) : 0;
+    const ObjectStore::Changes c = m_store->changesSince(since);
+    QVariantList objects;
+    objects.reserve(c.changed.size());
+    for (const QVariantMap& o : c.changed)
+        objects << o;
+    QVariantMap out{ { QStringLiteral("version"), double(c.version) },
+                     { QStringLiteral("reset"), c.reset },
+                     { QStringLiteral("objects"), objects },
+                     { QStringLiteral("removed"), QVariant(c.removed).toList() } };
+    const QVariantMap clean = sanitizeFilter(filter);
+    if (!clean.isEmpty()) {
+        QVariantList ids;
+        for (const QVariant& v : m_store->list(clean))
+            ids << v.toMap().value(QStringLiteral("id"));
+        out.insert(QStringLiteral("ids"), ids);
+    }
+    return out;
+}
+
+void ObjectSearch::syncIndex() const
+{
+    if (!m_store) return;
+    const ObjectStore::Changes c = m_store->changesSince(m_indexVersion);
+    if (c.reset)
+        m_index.clear();
+    for (const QString& id : c.removed)
+        m_index.remove(id);
+    for (const QVariantMap& o : c.changed) {
+        const QString id = o.value(QStringLiteral("id")).toString();
+        m_index.insert(id, Indexed{ ObjectRanker::prepare(o),
+                                    o.value(QStringLiteral("type")).toString(),
+                                    o.value(QStringLiteral("app")).toString() });
+    }
+    m_indexVersion = c.version;
 }
 
 bool ObjectSearch::answer(const QString& app, const QString& requestId, const QVariantList& ids)
@@ -237,7 +279,20 @@ bool ObjectSearch::answer(const QString& app, const QString& requestId, const QV
 QStringList ObjectSearch::rankWithFallback(const QString& query, const QVariantMap& filter) const
 {
     if (!m_store) return {};
-    return ObjectRanker::rank(m_store->list(sanitizeFilter(filter)), query, now());
+    syncIndex();
+    const QVariantMap clean = sanitizeFilter(filter);
+    QList<const ObjectRanker::Prepared*> objects;
+    if (clean.isEmpty()) {
+        objects.reserve(m_index.size());
+        for (const Indexed& o : std::as_const(m_index))
+            objects << &o.prepared;
+    } else {
+        for (const QVariant& v : m_store->list(clean)) {
+            const auto it = m_index.constFind(v.toMap().value(QStringLiteral("id")).toString());
+            if (it != m_index.cend()) objects << &it->prepared;
+        }
+    }
+    return ObjectRanker::rank(objects, query, now());
 }
 
 void ObjectSearch::request(ObjectResults* results, bool byView)

@@ -21,6 +21,20 @@ Rectangle {
     readonly property bool granted: typeof shell !== "undefined" && shell !== null
                                     && shell.roles.search === "basecamp_search"
 
+    // This app's copy of the store, brought up to date on each request from
+    // what changed since (basecamp-experiments#27): a query no longer copies
+    // every object. A shell without objectsSince gets the old path.
+    property var index: Ranker.newIndex()
+    function rank(query, filter) {
+        const changes = typeof shell.objectsSince === "function"
+                        ? shell.objectsSince(root.index.version, filter) : null
+        if (Ranker.applyChanges(root.index, changes))
+            return Ranker.rankIndex(root.index, changes.ids || null, query, Date.now())
+        return Ranker.rank(shell.objects(filter), query, Date.now())
+    }
+    // Losing the role (or getting it back) starts over.
+    onGrantedChanged: root.index = Ranker.newIndex()
+
     property int answered: 0
     property string lastQuery: ""
     property int lastCount: 0
@@ -28,7 +42,7 @@ Rectangle {
     Connections {
         target: root.granted ? shell : null
         function onSearchRequested(requestId, query, filter) {
-            const ids = Ranker.rank(shell.objects(filter), query, Date.now())
+            const ids = root.rank(query, filter)
             if (shell.answer(requestId, ids)) {
                 root.answered += 1
                 root.lastQuery = query

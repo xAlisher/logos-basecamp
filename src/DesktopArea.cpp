@@ -1093,11 +1093,7 @@ protected:
         const QPoint pos = mapTo(m_area->viewport(), e->position().toPoint());
         double r = m_area->splitVertical() ? double(pos.y() - a.top()) / qMax(1, a.height())
                                            : double(pos.x() - a.left()) / qMax(1, a.width());
-        r = qBound(0.2, r, 0.8);
-        for (double snap : { 1.0 / 3, 0.5, 2.0 / 3 })
-            if (qAbs(r - snap) < 0.025)
-                r = snap;
-        m_area->m_splitRatio = r;
+        m_area->m_splitRatio = DesktopArea::snapSplitRatio(r);
         m_area->layoutSplit();
     }
 
@@ -1150,7 +1146,9 @@ public:
             row.key = key;
             AppWindow* w = m_area->window(key);
             row.title = w ? w->windowTitle() : title;
-            const QIcon i(w ? w->iconPath() : icon);
+            // The app's tile, as in the title bar (AppTileIcon.h).
+            const QIcon i = appTileIcon(w ? w->iconPath() : icon, row.title,
+                                        tok("surfaceRaised", "#232323"), tok("text", "#FFFFFF"));
             if (!i.isNull())
                 row.icon = i.pixmap(QSize(24, 24), devicePixelRatioF());
             row.open = w != nullptr;
@@ -1313,10 +1311,21 @@ private:
     QString m_status;
 };
 
-double DesktopArea::SplitPair::score() const
+double DesktopArea::snapSplitRatio(double r)
+{
+    r = qBound(0.2, r, 0.8);
+    for (double snap : { 1.0 / 3, 0.5, 2.0 / 3 })
+        if (qAbs(r - snap) < 0.025)
+            return snap;
+    return r;
+}
+
+double DesktopArea::SplitPair::score(qint64 now) const
 {
     // Used often and lately: the count, fading by half every week.
-    const double days = (QDateTime::currentMSecsSinceEpoch() - last) / 86400000.0;
+    if (now < 0)
+        now = QDateTime::currentMSecsSinceEpoch();
+    const double days = (now - last) / 86400000.0;
     return count * std::pow(0.5, qMax(0.0, days) / 7.0);
 }
 

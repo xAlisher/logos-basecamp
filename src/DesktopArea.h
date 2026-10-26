@@ -193,6 +193,9 @@ public:
     // Both windows must be open. ratio < 0: the remembered one for this pair.
     void setSplit(const QString& first, const QString& second, double ratio = -1);
     void exitSplit();
+    // A divider position (share of the first side) kept within 0.2..0.8 and
+    // pulled onto 1/3, 1/2 or 2/3 when close.
+    static double snapSplitRatio(double r);
 
 signals:
     void windowsChanged();
@@ -210,6 +213,7 @@ protected:
 private:
     friend class SplitPicker;
     friend class SplitDivider;
+    friend class DesktopAreaSplitTest;   // tests/desktop_split_test.cpp
 
     void onActivated(QMdiSubWindow* w);
     void retileSoon();
@@ -220,7 +224,8 @@ private:
         double ratio = 0.5;
         int count = 0;
         qint64 last = 0;   // ms since epoch
-        double score() const;
+        // The use count, halving every week since `last`; `now` < 0: the clock.
+        double score(qint64 now = -1) const;
     };
     void layoutSplit();
     bool splitVertical() const;

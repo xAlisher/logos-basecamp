@@ -98,6 +98,7 @@ private slots:
     void testStateBatchOverItsCapFails();
     void testStateRepublishReplacesAndRetractRemoves();
     void testFlaglessPublisherUnchangedBesideState();
+    void testOverTheRateRefusedBeforeValidation();
 
 private:
     ObjectStore* makeStore()
@@ -932,6 +933,22 @@ void TestObjectStore::testFlaglessPublisherUnchangedBesideState()
     QCOMPARE(store->count(kChat), 1);
     for (const QVariant& v : store->list({ { QStringLiteral("apps"), QStringList{ kWallet } } }))
         QVERIFY(!v.toMap().contains(QStringLiteral("state")));
+}
+
+// A flood sends many requests at once: over the rate they are refused before
+// any object is validated, and a bad batch still does not use up the rate.
+void TestObjectStore::testOverTheRateRefusedBeforeValidation()
+{
+    std::unique_ptr<ObjectStore> store(makeStore());
+    QVariantMap bad = tx(QStringLiteral("bad"));
+    bad.remove(QStringLiteral("title"));
+    for (int i = 0; i < 3; ++i)
+        QCOMPARE(store->publish(kWallet, batch({ bad })), QStringLiteral("bad_request"));
+    for (int i = 0; i < ObjectStore::kRateRequests; ++i)
+        QCOMPARE(store->publish(kWallet, batch({ tx(QStringLiteral("tx:%1").arg(i)) })), QString());
+    QCOMPARE(store->publish(kWallet, batch({ bad })), QStringLiteral("failed"));
+    QCOMPARE(store->publish(kWallet, batch({ tx(QStringLiteral("tx:over")) })), QStringLiteral("failed"));
+    QCOMPARE(store->count(kWallet), ObjectStore::kRateRequests);
 }
 
 QTEST_GUILESS_MAIN(TestObjectStore)

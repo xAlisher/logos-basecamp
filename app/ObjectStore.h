@@ -168,7 +168,9 @@ private:
     QString publishBatch(const QString& app, const QVariantMap& params,
                          int* badIndex, QStringList* ids, bool fromHost);
     qint64 now() const;
-    bool allow(const QString& app);
+    // Whether `app` may publish now (20 per 10 s); records the request
+    // unless `record` is false.
+    bool allow(const QString& app, bool record = true);
     // Validate one envelope. Returns the cleaned object (host fields not yet
     // set) or an empty map with *error set.
     QVariantMap validate(const QString& app, int index, const QVariantMap& in,

@@ -241,7 +241,7 @@ QString ObjectStore::idFor(const QString& app, const QString& key)
     return QStringLiteral("o") + QString::fromLatin1(digest.toHex().left(20));
 }
 
-bool ObjectStore::allow(const QString& app)
+bool ObjectStore::allow(const QString& app, bool record)
 {
     const qint64 t = now();
     auto& times = m_recent[app];
@@ -249,7 +249,8 @@ bool ObjectStore::allow(const QString& app)
         times.pop_front();
     if (int(times.size()) >= kRateRequests)
         return false;
-    times.push_back(t);
+    if (record)
+        times.push_back(t);
     return true;
 }
 
@@ -452,6 +453,15 @@ QString ObjectStore::publishBatch(const QString& app, const QVariantMap& params,
     if (!isList(objectsV)) {
         qWarning().noquote() << "ObjectStore:" << app << "publish refused — `objects` must be a list";
         return QStringLiteral("bad_request");
+    }
+    // Over the rate, refused before any object is looked at: an app that
+    // floods sends many requests at once, and validating each batch only to
+    // refuse it held the UI thread (basecamp-experiments#63). The request is
+    // counted below, once it is valid, so a bad batch still costs nothing.
+    if (!fromHost && !allow(app, /*record=*/false)) {
+        qWarning().noquote() << "ObjectStore:" << app << "publish refused — over"
+                             << kRateRequests << "requests per" << kRateWindowMs / 1000 << "s";
+        return QStringLiteral("failed");
     }
     const QVariantList objects = objectsV.toList();
     if (objects.size() > kMaxObjectsPerApp) {

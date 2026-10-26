@@ -14,7 +14,12 @@ import "KeychainFormat.js" as F
 //
 // `request` is ShellApi.keychainRequest(id): { requestId, state, requesterApp,
 // requesterName, requesterIcon, requesterFullBleed, description, kind, keys,
-// lastKey }. A phone gets it full screen, anything wider a centred sheet.
+// lastKey, waiting }. A phone gets it full screen, anything wider a centred
+// sheet.
+//
+// Every app is named twice: by its display name, which is its own claim (the
+// host shows the module id instead when the name is Keychain's, Basecamp's or
+// another app's), and by the module id the host attested, which no app picks.
 KeychainSheet {
     id: sheet
     objectName: "basecampKeychain.request"
@@ -23,12 +28,17 @@ KeychainSheet {
 
     signal continueRequested(string ownerApp, string keyId)
     signal cancelRequested()
+    signal openSignerRequested()
 
     readonly property var keys: request.keys || []
     readonly property bool waiting: request.state === "keyChosen" || request.state === "signing"
     property int selected: -1
     // The chosen key's app while it signs.
     readonly property string signerName: request.signerName || ""
+    readonly property string requesterApp: request.requesterApp || ""
+    readonly property string requesterName: request.requesterName || requesterApp
+    // Other apps' requests behind this one.
+    readonly property int waitingCount: request.waiting || 0
 
     fullScreenWhenCompact: true
     maxWidth: 520
@@ -65,24 +75,36 @@ KeychainSheet {
 
     Row {
         width: parent.width
-        height: 48
+        height: Math.max(48, who.implicitHeight)
         spacing: Theme.spacing.medium
         BasecampAppTile {
             anchors.verticalCenter: parent.verticalCenter
             size: 40
-            label: sheet.request.requesterName || ""
+            label: sheet.requesterName
             source: sheet.request.requesterIcon || ""
             fullBleed: sheet.request.requesterFullBleed === true
         }
         Column {
+            id: who
             anchors.verticalCenter: parent.verticalCenter
             width: parent.width - 40 - Theme.spacing.medium
             LogosText {
                 objectName: "basecampKeychain.request.requester"
                 width: parent.width
                 elide: Text.ElideRight
-                text: sheet.request.requesterName || ""
+                textFormat: Text.PlainText
+                text: sheet.requesterName
                 font.weight: Theme.typography.weightMedium
+            }
+            LogosText {
+                objectName: "basecampKeychain.request.requesterApp"
+                visible: sheet.requesterApp !== "" && sheet.requesterApp !== sheet.requesterName
+                width: parent.width
+                elide: Text.ElideMiddle
+                textFormat: Text.PlainText
+                color: Theme.palette.textSecondary
+                font.pixelSize: Theme.typography.secondaryText
+                text: qsTr("App id: %1").arg(sheet.requesterApp)
             }
             LogosText {
                 width: parent.width
@@ -113,7 +135,10 @@ KeychainSheet {
                 wrapMode: Text.Wrap
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
-                text: qsTr("%1 says:").arg(sheet.request.requesterName || "")
+                textFormat: Text.PlainText
+                text: qsTr("%1 says:").arg(sheet.requesterApp && sheet.requesterApp !== sheet.requesterName
+                                           ? qsTr("%1 (%2)").arg(sheet.requesterName).arg(sheet.requesterApp)
+                                           : sheet.requesterName)
             }
             LogosText {
                 objectName: "basecampKeychain.request.claim"
@@ -150,6 +175,18 @@ KeychainSheet {
             color: Theme.palette.textSecondary
             text: qsTr("Approve or reject the request in %1. It shows you what will be signed.").arg(sheet.signerName)
         }
+    }
+
+    LogosText {
+        objectName: "basecampKeychain.request.queued"
+        visible: sheet.waitingCount > 0
+        width: parent.width
+        wrapMode: Text.Wrap
+        color: Theme.palette.textSecondary
+        font.pixelSize: Theme.typography.secondaryText
+        text: sheet.waitingCount === 1
+              ? qsTr("1 more request is waiting after this one.")
+              : qsTr("%1 more requests are waiting after this one.").arg(sheet.waitingCount)
     }
 
     // ── Which key ───────────────────────────────────────────────────────
@@ -227,9 +264,14 @@ KeychainSheet {
                     elide: Text.ElideRight
                     color: Theme.palette.textSecondary
                     font.pixelSize: Theme.typography.secondaryText
+                    // The owner by name and by its attested id.
+                    readonly property string owner: keyRow.modelData.ownerApp !== keyRow.modelData.ownerName
+                        ? qsTr("%1 (%2)").arg(keyRow.modelData.ownerName).arg(keyRow.modelData.ownerApp)
+                        : keyRow.modelData.ownerApp
+                    textFormat: Text.PlainText
                     text: keyRow.modelData.label
-                          ? qsTr("%1 · %2").arg(keyRow.modelData.ownerName).arg(keyRow.modelData.name)
-                          : keyRow.modelData.ownerName
+                          ? qsTr("%1 · %2").arg(owner).arg(keyRow.modelData.name)
+                          : owner
                 }
             }
         }
@@ -250,6 +292,13 @@ KeychainSheet {
                 const k = sheet.keys[sheet.selected]
                 sheet.continueRequested(k.ownerApp, k.keyId)
             }
+        }
+        LogosButton {
+            objectName: "basecampKeychain.request.openSigner"
+            visible: sheet.waiting && sheet.signerName !== ""
+            text: qsTr("Open %1").arg(sheet.signerName)
+            variant: LogosButton.Variant.Primary
+            onClicked: sheet.openSignerRequested()
         }
         LogosButton {
             objectName: "basecampKeychain.request.cancel"

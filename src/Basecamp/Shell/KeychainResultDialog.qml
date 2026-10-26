@@ -19,14 +19,31 @@ IntentDialog {
 
     property var displayNameLookup: function (name) { return name }
 
-    // KeychainBroker::requestFinished's summary: { requestId, status, error?,
-    // reason?, signerApp?, signerName?, keyName? }.
+    // KeychainBroker::requestFinished's summary: { requestId, status,
+    // requesterApp, requesterName, error?, reason?, signerApp?, signerName?,
+    // keyName?, keyLabel?, waiting }.
     property var summary: ({})
     property string requester: ""
 
     readonly property bool signed: summary.status === "done"
-    readonly property string requesterName: requester ? displayNameLookup(requester) : ""
-    readonly property string signerName: summary.signerName || summary.signerApp || ""
+    // Each app by the name the broker let it show, then its attested id: a
+    // display name is the app's own claim and two apps can share one.
+    function named(name, app) {
+        if (!app) return name || ""
+        if (!name || name === app) return app
+        return qsTr("%1 (%2)").arg(name).arg(app)
+    }
+    readonly property string requesterName: named(summary.requesterName
+                                                  || (requester ? displayNameLookup(requester) : ""),
+                                                  requester)
+    readonly property string signerName: named(summary.signerName, summary.signerApp)
+    // The key by the user's label first, the signer app's name for it after.
+    readonly property string keyText: summary.keyLabel
+                                      ? qsTr("%1 (%2)").arg(summary.keyLabel).arg(summary.keyName || "")
+                                      : (summary.keyName || qsTr("its key"))
+    // Other apps' requests still open: Keychain comes back for them once
+    // this sheet is closed (OverlayDialogs).
+    readonly property int waiting: summary.waiting || 0
 
     function openWith(requesterApp, result) {
         requester = requesterApp || ""
@@ -52,7 +69,7 @@ IntentDialog {
     function detailText() {
         const e = summary.error || ""
         if (signed)
-            return qsTr("%1 signed it with %2.").arg(signerName).arg(summary.keyName || qsTr("its key"))
+            return qsTr("%1 signed it with %2.").arg(signerName).arg(keyText)
         if (summary.status === "rejected")
             return qsTr("%1 said no.").arg(signerName)
         if (e === "keychain_closed")
@@ -69,6 +86,8 @@ IntentDialog {
             return qsTr("%1 could not take the request.").arg(signerName || qsTr("The signing app"))
         if (e === "key_removed")
             return qsTr("The key was removed from Keychain while it was signing.")
+        if (e === "key_changed")
+            return qsTr("%1 changed the key after you chose it, so nothing was passed on.").arg(signerName)
         return qsTr("Something went wrong while signing.")
     }
 
@@ -99,6 +118,17 @@ IntentDialog {
             textFormat: Text.PlainText
             color: Theme.palette.textSecondary
             text: qsTr("%1 says: “%2”").arg(root.signerName).arg(root.summary.reason || "")
+        }
+        LogosText {
+            objectName: "keychainResultDialog.waiting"
+            visible: root.waiting > 0
+            width: parent.width
+            wrapMode: Text.Wrap
+            color: Theme.palette.textSecondary
+            font.pixelSize: Theme.typography.secondaryText
+            text: root.waiting === 1
+                  ? qsTr("1 more signature request is waiting. Keychain opens it next.")
+                  : qsTr("%1 more signature requests are waiting. Keychain opens them next.").arg(root.waiting)
         }
     }
 

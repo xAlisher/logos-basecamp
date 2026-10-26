@@ -15,6 +15,7 @@
 
 class ObjectResults;
 class ObjectSearch;
+class AppDataStore;
 class Keychain;
 class KeychainBroker;
 #include <QHash>
@@ -245,6 +246,9 @@ public:
     // the signing request broker, for ShellApi's keychain-role members.
     Keychain* keychain() const { return m_keychain; }
     KeychainBroker* keychainBroker() const { return m_keychainBroker; }
+    // "Open <signer>" in the Keychain's waiting view: bring forward the app
+    // holding an open request's chosen key. False when none is.
+    bool presentKeychainSigner(const QString& requestId);
     Q_INVOKABLE QStringList searchObjects(const QString& query,
                                           const QVariantMap& filter = QVariantMap()) const;
     Q_INVOKABLE QObject* shellSearch(const QString& query,
@@ -700,6 +704,7 @@ private:
     class ObjectSearch*       m_objectSearch = nullptr;
     Keychain*                 m_keychain = nullptr;
     KeychainBroker*           m_keychainBroker = nullptr;
+    AppDataStore*             m_appData = nullptr;
     // A requester's open basecamp.keychain.sign dispatch, by Keychain request id.
     QHash<QString, QString>   m_keychainDispatches;
     // Reported uninstalled; their keys go once the metadata agrees.

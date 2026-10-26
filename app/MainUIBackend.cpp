@@ -34,6 +34,7 @@
 #include "PackageCoordinator.h"
 #include "BuildInfo.h"
 #include "HomeSettingsStore.h"
+#include "AppDataStore.h"
 #include "InstallRegistry.h"
 #include "Keychain.h"
 #include "KeychainBroker.h"
@@ -614,6 +615,17 @@ void MainUIBackend::wireIntents()
             // signature, the signer answering one).
             if (kKeychainIntents.contains(intent))
                 return beginKeychainIntent(dispatchId, intent, params, requesterName);
+
+            // An app's own data: the same shape, its own and nobody else's.
+            if (kAppDataIntents.contains(intent)) {
+                const QVariantMap data = intent == kAppDataReadIntent
+                    ? m_appData->read(requesterName)
+                    : m_appData->write(requesterName, params.value(QStringLiteral("data")));
+                QTimer::singleShot(0, this, [this, dispatchId, data]() {
+                    respondToShellIntent(dispatchId, true, data, QString());
+                });
+                return 1;
+            }
 
             if (kPackageConfirmIntents.contains(intent)) {
                 return m_packageCoordinator
@@ -1539,6 +1551,7 @@ QString MainUIBackend::raiseObjectAction(const QString& id, const QString& actio
 void MainUIBackend::wireKeychain()
 {
     m_keychain = new Keychain(LogosBasecampPaths::baseDirectory() + QStringLiteral("/keychain.json"), this);
+    m_appData = new AppDataStore(LogosBasecampPaths::baseDirectory() + QStringLiteral("/app_data"), this);
     // The owner is the module name plus the catalog source the host recorded
     // for it, when it recorded one.
     m_keychain->setSourceResolver([this](const QString& app) {
@@ -1548,11 +1561,27 @@ void MainUIBackend::wireKeychain()
             : QString();
     });
     m_keychain->setNameResolver([this](const QString& app) { return displayNameFor(app); });
+    // An app's display name is shown only when it is not another app's
+    // (Keychain::shownName): every other installed app, and the role holders.
+    m_keychain->setTakenNames([this](const QString& app) {
+        QStringList taken;
+        if (m_uiPluginManager)
+            for (const QString& other : m_uiPluginManager->uiPluginMetadataSnapshot().keys())
+                if (other != app) taken.append(displayNameFor(other));
+        if (m_roles)
+            for (const QVariant& holder : m_roles->holders())
+                if (!holder.toString().isEmpty() && holder.toString() != app)
+                    taken.append(displayNameFor(holder.toString()));
+        return taken;
+    });
 
     m_keychainBroker = new KeychainBroker(m_keychain, this);
     m_keychainBroker->setVerifier(&KeychainVerify::verify);
     m_keychainBroker->setNameResolver([this](const QString& app) { return displayNameFor(app); });
     m_keychainBroker->setKeychainAvailable([this]() { return !roleHolder(kKeychainRole).isEmpty(); });
+    // Only the app the user is looking at may ask: the Keychain comes forward
+    // for every request, and it must not come over something else.
+    m_keychainBroker->setInFront([this](const QString& app) { return currentVisibleApp() == app; });
 
     // A request needs the user: bring the Keychain app forward. What it shows
     // it reads through `shell` (ShellApi), which only its holder may.
@@ -1625,7 +1654,8 @@ void MainUIBackend::wireKeychain()
         m_keychainAppOpen = open;
     });
 
-    // Uninstalled: its keys leave the directory, label and note with them.
+    // Uninstalled: its keys leave the directory, label and note with them,
+    // and its AppDataStore data goes too.
     // package_manager reports an upgrade as an uninstall too, so the keys go
     // only once the app is really absent from what is installed and nothing
     // is installing it.
@@ -1639,8 +1669,17 @@ void MainUIBackend::wireKeychain()
             if (inFlight && inFlight->has(name)) continue;
             m_keychainUninstalled.remove(name);
             m_keychain->removeApp(name);
+            m_appData->removeApp(name);
         }
     });
+}
+
+bool MainUIBackend::presentKeychainSigner(const QString& requestId)
+{
+    const QString signer = m_keychainBroker ? m_keychainBroker->signerFor(requestId) : QString();
+    if (signer.isEmpty() || !m_intentPresenter) return false;
+    m_intentPresenter->presentApp(signer);
+    return true;
 }
 
 int MainUIBackend::beginKeychainIntent(const QString& dispatchId, const QString& intent,

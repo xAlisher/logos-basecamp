@@ -81,11 +81,14 @@ QVariantMap KeychainBroker::requestSignature(const QString& requester, const QVa
     const QString kind = params.value(QStringLiteral("kind")).toString();
     const QString description = params.value(QStringLiteral("description")).toString().trimmed();
     const QString algorithm = params.value(QStringLiteral("algorithm"), QStringLiteral("ed25519")).toString();
+    // The kind is the purpose. Both screens name the kind; keys are offered
+    // by purpose; a request where they differ could have a key kept for
+    // transactions sign what the user is shown as a login.
     const QString purpose = params.value(QStringLiteral("purpose"), kind).toString();
     if (payloadV.typeId() != QMetaType::QString || !kinds().contains(kind)
         || params.value(QStringLiteral("description")).typeId() != QMetaType::QString
         || description.isEmpty() || description.size() > kMaxDescription || !oneLine(description)
-        || !Keychain::purposeNames().contains(purpose))
+        || !Keychain::purposeNames().contains(purpose) || purpose != kind)
         return error("bad_request");
     // Only what the shell can check: a signature it cannot verify must never
     // be passed on, so it is never asked for.
@@ -97,13 +100,17 @@ QVariantMap KeychainBroker::requestSignature(const QString& requester, const QVa
         return error("bad_request");
 
     if (!findOpen(requester).isEmpty()) return error("busy");
+    if (throttled(requester)) return error("busy");
     if (m_hasKeychain && !m_hasKeychain()) return error("unavailable");
+    if (m_inFront && !m_inFront(requester)) return error("not_in_front");
 
     Request r;
     r.id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     r.requester = requester;
-    r.requesterName = m_nameFor ? m_nameFor(requester) : QString();
-    if (r.requesterName.isEmpty()) r.requesterName = requester;
+    // Its own display name only when that is not somebody else's.
+    const QString claimed = m_nameFor ? m_nameFor(requester) : QString();
+    r.requesterName = m_keys ? m_keys->shownName(requester, claimed)
+                             : Keychain::shownName(requester, claimed, {});
     r.kind = kind;
     r.description = description;
     r.algorithm = algorithm;
@@ -111,12 +118,32 @@ QVariantMap KeychainBroker::requestSignature(const QString& requester, const QVa
     r.payload = *decoded;
     r.created = now();
     m_requests.insert(r.id, r);
+    m_recent[requester].append(r.created);
+    startHead();
     armTimer();
 
     qInfo().noquote() << "Keychain: request" << r.id << "from" << requester << kind;
     emit requestOpened(r.id);
     emit requestsChanged();
     return { { QStringLiteral("requestId"), r.id } };
+}
+
+bool KeychainBroker::throttled(const QString& requester) const
+{
+    const qint64 t = now();
+    if (m_pauseUntil.value(requester) > t) return true;
+    int n = 0;
+    for (const qint64 at : m_recent.value(requester))
+        if (t - at < 60 * 1000) ++n;
+    return n >= kMaxPerMinute;
+}
+
+void KeychainBroker::startHead()
+{
+    const QStringList ids = openRequests();
+    if (ids.isEmpty()) return;
+    Request& head = m_requests[ids.first()];
+    if (head.started == 0) head.started = now();
 }
 
 bool KeychainBroker::cancelByRequester(const QString& requester, const QString& requestId)
@@ -184,15 +211,25 @@ QVariantMap KeychainBroker::requestForKeychain(const QString& requestId) const
         { QStringLiteral("purpose"), it->purpose },
         { QStringLiteral("keys"), keys },
         { QStringLiteral("lastKey"), last },
+        { QStringLiteral("waiting"), int(m_requests.size()) - 1 },
     };
     // Once chosen: whose app is signing, for "Waiting for …".
     if (!it->ownerApp.isEmpty()) {
         const Keychain::Key* k = m_keys ? m_keys->find(it->ownerApp, it->keyId) : nullptr;
         r.insert(QStringLiteral("signerApp"), it->ownerApp);
-        r.insert(QStringLiteral("signerName"), k ? k->ownerName : it->ownerApp);
+        r.insert(QStringLiteral("signerName"),
+                 m_keys ? m_keys->shownName(it->ownerApp, k ? k->ownerName : QString()) : it->ownerApp);
         r.insert(QStringLiteral("chosenKeyId"), it->keyId);
     }
     return r;
+}
+
+QString KeychainBroker::signerFor(const QString& requestId) const
+{
+    const auto it = m_requests.constFind(requestId);
+    if (it == m_requests.cend() || (it->state != State::KeyChosen && it->state != State::Signing))
+        return QString();
+    return it->ownerApp;
 }
 
 bool KeychainBroker::chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId)
@@ -203,12 +240,23 @@ bool KeychainBroker::chooseKey(const QString& requestId, const QString& ownerApp
     it->state = State::KeyChosen;
     it->ownerApp = ownerApp;
     it->keyId = keyId;
+    // The key as the user chose it: this public key must sign, whatever the
+    // registry holds by then.
+    const Keychain::Key* k = m_keys->find(ownerApp, keyId);
+    it->keyAlgorithm = k->algorithm;
+    it->keyPublic = k->publicKey;
+    it->keyName = k->name;
+    it->keyLabel = k->label;
     qInfo().noquote() << "Keychain: request" << requestId << "key" << keyId << "of" << ownerApp;
     const QVariantMap envelope{
         { QStringLiteral("requestId"), it->id },
         { QStringLiteral("keyId"), keyId },
         { QStringLiteral("payload"), QString::fromLatin1(it->payload.toBase64()) },
         { QStringLiteral("kind"), it->kind },
+        { QStringLiteral("purpose"), it->purpose },
+        // The attested id next to the name, so the signer can tell two apps
+        // of the same name apart.
+        { QStringLiteral("requesterApp"), it->requester },
         { QStringLiteral("requesterName"), it->requesterName },
         { QStringLiteral("description"), it->description },
     };
@@ -263,15 +311,23 @@ QString KeychainBroker::completeSignature(const QString& signer, const QString& 
         return QString();
     }
 
-    // Read the key again: the user may have removed it while the signer asked.
+    // Read the key again: the user may have removed it while the signer
+    // asked, or the signer may have put another public key under its id.
+    // Either way the key the user chose is not the one that would sign.
     const Keychain::Key* key = m_keys ? m_keys->find(it->ownerApp, it->keyId) : nullptr;
     if (!key) {
         end(requestId, State::Failed, QStringLiteral("key_removed"));
         return stateName(State::Failed);
     }
+    if (key->publicKey != it->keyPublic || key->algorithm != it->keyAlgorithm) {
+        qWarning().noquote() << "Keychain: request" << requestId << "key" << it->keyId << "of"
+                             << signer << "changed after it was chosen";
+        end(requestId, State::Failed, QStringLiteral("key_changed"));
+        return stateName(State::Failed);
+    }
     const auto sig = QByteArray::fromBase64Encoding(signatureBase64.toLatin1(),
                                                     QByteArray::AbortOnBase64DecodingErrors);
-    if (!sig || !m_verify || !m_verify(key->algorithm, key->publicKey, it->payload, *sig)) {
+    if (!sig || !m_verify || !m_verify(it->keyAlgorithm, it->keyPublic, it->payload, *sig)) {
         qWarning().noquote() << "Keychain: request" << requestId << "signature from" << signer
                              << "does not verify, not passed on";
         end(requestId, State::Failed, QStringLiteral("bad_signature"));
@@ -323,8 +379,9 @@ void KeychainBroker::sweep()
     const qint64 t = now();
     const QStringList ids = m_requests.keys();
     for (const QString& id : ids) {
+        // Only the one on screen runs its clock (startHead).
         const auto it = m_requests.constFind(id);
-        if (it != m_requests.cend() && t - it->created >= kTimeoutMs)
+        if (it != m_requests.cend() && it->started > 0 && t - it->started >= kTimeoutMs)
             end(id, State::TimedOut, QStringLiteral("timeout"));
     }
     armTimer();
@@ -339,7 +396,18 @@ void KeychainBroker::end(const QString& id, State state, const QString& err,
     // Out of the table before anyone hears of it: every ending fires once,
     // and the payload goes with the entry.
     m_requests.erase(it);
+    startHead();
     armTimer();
+
+    // Held off for a moment after an ending it, or the user, chose: a
+    // requester asking again at once would pull the Keychain straight back.
+    if (err == QStringLiteral("requester_cancelled") || err == QStringLiteral("user_cancelled")
+        || err == QStringLiteral("keychain_closed") || err == QStringLiteral("timeout"))
+        m_pauseUntil.insert(r.requester, now() + kCooldownMs);
+    QList<qint64>& recent = m_recent[r.requester];
+    recent.erase(std::remove_if(recent.begin(), recent.end(),
+                                [t = now()](qint64 at) { return t - at >= 60 * 1000; }),
+                 recent.end());
 
     const QString status = stateName(state);
     if (err.isEmpty())
@@ -353,23 +421,31 @@ void KeychainBroker::end(const QString& id, State state, const QString& err,
     if (!err.isEmpty()) result.insert(QStringLiteral("error"), err);
     // The chosen key and its signature, on done only. Nothing about any other
     // key, and nothing of the user's (label, note).
+    // The key as it was chosen (and verified against), not the registry's
+    // entry now.
     if (state == State::Done && key) {
         result.insert(QStringLiteral("signature"), QString::fromLatin1(signature.toBase64()));
-        result.insert(QStringLiteral("publicKey"), QString::fromLatin1(key->publicKey.toBase64()));
+        result.insert(QStringLiteral("publicKey"), QString::fromLatin1(r.keyPublic.toBase64()));
         result.insert(QStringLiteral("keyId"), r.keyId);
         // The signer app's name for the key, as the Keychain showed it, so
         // the requester can say which key signed. Never the user's label.
-        result.insert(QStringLiteral("keyName"), key->name);
+        result.insert(QStringLiteral("keyName"), r.keyName);
         result.insert(QStringLiteral("signerApp"), r.ownerApp);
     }
 
-    QVariantMap summary{ { QStringLiteral("requestId"), id }, { QStringLiteral("status"), status } };
+    QVariantMap summary{ { QStringLiteral("requestId"), id }, { QStringLiteral("status"), status },
+                         { QStringLiteral("requesterApp"), r.requester },
+                         { QStringLiteral("requesterName"), r.requesterName },
+                         { QStringLiteral("waiting"), int(m_requests.size()) } };
     if (!err.isEmpty()) summary.insert(QStringLiteral("error"), err);
     if (!reason.isEmpty()) summary.insert(QStringLiteral("reason"), reason);
     if (!r.ownerApp.isEmpty()) {
         summary.insert(QStringLiteral("signerApp"), r.ownerApp);
-        summary.insert(QStringLiteral("signerName"), key ? key->ownerName : r.ownerApp);
-        if (key) summary.insert(QStringLiteral("keyName"), key->name);
+        summary.insert(QStringLiteral("signerName"),
+                       m_keys ? m_keys->shownName(r.ownerApp, key ? key->ownerName : QString()) : r.ownerApp);
+        summary.insert(QStringLiteral("keyName"), r.keyName);
+        // What the user chose it by, for the shell's own sheet only.
+        if (!r.keyLabel.isEmpty()) summary.insert(QStringLiteral("keyLabel"), r.keyLabel);
     }
 
     r.payload.fill('\0');

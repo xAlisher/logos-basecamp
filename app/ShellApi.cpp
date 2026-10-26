@@ -687,6 +687,11 @@ bool ShellApi::cancelSignatureRequest(const QString& requestId)
         && m_backend->keychainBroker()->cancelByUser(requestId);
 }
 
+bool ShellApi::openSigner(const QString& requestId)
+{
+    return holds("keychain") && m_backend->presentKeychainSigner(requestId);
+}
+
 bool ShellApi::openRole(const QString& role)
 {
     if (!holdsAny()) return false;

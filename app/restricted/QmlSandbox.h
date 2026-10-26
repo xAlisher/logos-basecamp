@@ -29,13 +29,14 @@ namespace QmlSandbox {
 // as untrusted — useful for assertions.
 //
 // `storageDir` is the app's own data folder: the engine's offlineStoragePath,
-// so QtQuick.LocalStorage database files land there (basecamp-experiments#59:
-// the Stub Signer keeps its test keys there). Qt's default is one folder for
-// every engine, outside the profile, where any app could open another app's
-// database by its name. Not a wall inside one process: Qt hands an already
-// open connection to any engine asking for the same database name
-// (tst_qml_sandbox localStorageInTheAppsFolder). Empty leaves the engine as
-// it is.
+// so QtQuick.LocalStorage database files land there. Qt's default is one
+// folder for every engine, outside the profile. Not a wall inside one
+// process: Qt hands an already open connection to any engine asking for the
+// same database name (tst_qml_sandbox localStorageInTheAppsFolder), so
+// nothing secret belongs in LocalStorage. An app's secrets go through
+// `basecamp.appdata.*` (AppDataStore), which the host keys by the attested
+// caller; the Stub Signer keeps its test keys there. Empty leaves the engine
+// as it is.
 QStringList configure(QQmlEngine* engine,
                       const QString& installDir,
                       const QString& qmlViewPath,

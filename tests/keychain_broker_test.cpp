@@ -8,7 +8,11 @@
 // request validation, a requester unable to read or cancel another's request,
 // only the key's owner completing it, a bad signature never passed on, nothing
 // about unchosen keys (or the user's label and note) in any result or in the
-// signer's envelope, and the payload dropped when the request ends.
+// signer's envelope, and the payload dropped when the request ends. And the
+// #60 review fixes: a borrowed display name shown as the app's id, purpose
+// equal to kind, a key swapped under a request failing, the user's label on
+// the shell's sheet only, a requester held off after cancels and over five a
+// minute, only the app in front asking, a queued request's full 5 minutes.
 //
 // The real verifier (OpenSSL EVP Ed25519) is checked against RFC 8032's test
 // vectors, and once through the broker end to end.
@@ -69,6 +73,9 @@ class KeychainBrokerTest : public QObject {
     KeychainBroker* m_broker = nullptr;
     qint64 m_now = 0;
     bool m_keychainApp = true;
+
+    // Past the pause a cancelled or timed-out request leaves its requester in.
+    void later() { m_now += KeychainBroker::kCooldownMs; }
 
     QString open(const QString& requester = kRequester, const QVariantMap& params = ask())
     {
@@ -137,6 +144,9 @@ private slots:
         QCOMPARE(env.value("payload").toString(), b64(kPayload));
         QCOMPARE(env.value("kind").toString(), QStringLiteral("login"));
         QCOMPARE(env.value("requesterName").toString(), QStringLiteral("Stub Requester"));
+        // The attested id too, so a signer can tell two apps of one name apart.
+        QCOMPARE(env.value("requesterApp").toString(), kRequester);
+        QCOMPARE(env.value("purpose").toString(), QStringLiteral("login"));
         QCOMPARE(env.value("description").toString(), QStringLiteral("Sign in to Weekend hike"));
         // The user's words never reach the signer.
         const QByteArray envDump = QJsonDocument::fromVariant(env).toJson();
@@ -210,6 +220,7 @@ private slots:
         QCOMPARE(results.last().at(1).toMap().value("error").toString(), QStringLiteral("user_cancelled"));
         QCOMPARE(ended.count(), 0);   // no signer had it
 
+        later();
         id = open();
         QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
         m_broker->signerReached(id);
@@ -326,6 +337,7 @@ private slots:
         QCOMPARE(results.last().at(1).toMap().value("status").toString(), QStringLiteral("timedOut"));
 
         // Choosing a key does not restart the clock: five minutes in all.
+        later();
         const QString signing = open();
         m_now += 60 * 1000;
         QVERIFY(m_broker->chooseKey(signing, kSigner, "daily"));
@@ -419,8 +431,10 @@ private slots:
         QCOMPARE(m_broker->openCount(), 1);
         // Another app is not affected.
         QVERIFY(!open(kStranger).isEmpty());
-        // Once it ends, the app may ask again.
+        // Once it ends, and the pause after a cancel is over, the app may
+        // ask again.
         QVERIFY(m_broker->cancelByUser(id));
+        later();
         QVERIFY(!open().isEmpty());
     }
 
@@ -497,6 +511,7 @@ private slots:
         QCOMPARE(m_broker->stateFor(kRequester, id), QStringLiteral("pending"));
         QVERIFY(m_broker->cancelByUser(id));
 
+        later();
         id = open(kRequester, ask("transaction"));
         ids.clear();
         for (const QVariant& k : m_broker->requestForKeychain(id).value("keys").toList())
@@ -528,6 +543,7 @@ private slots:
         QSignalSpy toSigner(m_broker, &KeychainBroker::signerRequested);
         // One of each ending.
         auto drive = [&](int how) {
+            later();
             const QString id = open();
             QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
             m_broker->signerReached(id);
@@ -567,6 +583,7 @@ private slots:
     {
         const QString id = open();
         QVERIFY(m_broker->cancelByUser(id));
+        later();
         QCOMPARE(m_broker->openCount(), 0);
         QVERIFY(m_broker->requestForKeychain(id).isEmpty());
         // Nothing left that could be handed out again.
@@ -585,6 +602,233 @@ private slots:
         m_now += 10;
         const QString b = open(kStranger);
         QCOMPARE(m_broker->openRequests(), (QStringList{ a, b }));
+    }
+
+    // ── Review fixes (basecamp-experiments#60) ──────────────────────────
+
+    void aBorrowedNameIsShownAsTheAppItself()
+    {
+        // A requester whose display name is "Keychain" (or another app's) is
+        // still shown as itself: its module id, everywhere the user looks.
+        QString claimed = QStringLiteral("Keychain");
+        m_broker->setNameResolver([&claimed](const QString& app) {
+            return app == kStranger ? claimed : QStringLiteral("Stub Requester");
+        });
+        QSignalSpy toSigner(m_broker, &KeychainBroker::signerRequested);
+        QSignalSpy finished(m_broker, &KeychainBroker::requestFinished);
+
+        QString id = open(kStranger);
+        QVariantMap view = m_broker->requestForKeychain(id);
+        QCOMPARE(view.value("requesterName").toString(), kStranger);
+        QCOMPARE(view.value("requesterApp").toString(), kStranger);
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        QCOMPARE(toSigner.last().at(1).toMap().value("requesterName").toString(), kStranger);
+        QCOMPARE(toSigner.last().at(1).toMap().value("requesterApp").toString(), kStranger);
+        QVERIFY(m_broker->cancelByUser(id));
+        QCOMPARE(finished.last().at(1).toMap().value("requesterName").toString(), kStranger);
+        QCOMPARE(finished.last().at(1).toMap().value("requesterApp").toString(), kStranger);
+
+        // Spelled differently, still Keychain's; "Basecamp" too.
+        for (const QString& name : { QStringLiteral("key-CHAIN "), QStringLiteral("Basecamp") }) {
+            claimed = name;
+            later();
+            id = open(kStranger);
+            QCOMPARE(m_broker->requestForKeychain(id).value("requesterName").toString(), kStranger);
+            QVERIFY(m_broker->cancelByUser(id));
+        }
+        // Another installed app's name.
+        m_keys->setTakenNames([](const QString& app) {
+            return app == kStranger ? QStringList{ QStringLiteral("Stub Requester") } : QStringList();
+        });
+        claimed = QStringLiteral("Stub Requester");
+        later();
+        id = open(kStranger);
+        QCOMPARE(m_broker->requestForKeychain(id).value("requesterName").toString(), kStranger);
+        // An own name nobody else has is shown as it is.
+        QCOMPARE(m_broker->requestForKeychain(open()).value("requesterName").toString(),
+                 QStringLiteral("Stub Requester"));
+    }
+
+    void aSignerWithAnotherSignersNameIsShownAsItself()
+    {
+        m_keys->setNameResolver([](const QString&) { return QStringLiteral("Stub Signer"); });
+        m_keys->setTakenNames([](const QString& app) {
+            return app == kOtherSigner ? QStringList{ QStringLiteral("Stub Signer") } : QStringList();
+        });
+        QVERIFY(m_keys->updateKey(kOtherSigner, "any", { { "name", "Daily key" } }).value("ok").toBool());
+        for (const QVariant& v : m_keys->allKeys()) {
+            const QVariantMap k = v.toMap();
+            QCOMPARE(k.value("ownerName").toString(),
+                     k.value("ownerApp").toString() == kSigner ? QStringLiteral("Stub Signer") : kOtherSigner);
+        }
+        const QString id = open();
+        QVERIFY(m_broker->chooseKey(id, kOtherSigner, "any"));
+        QCOMPARE(m_broker->requestForKeychain(id).value("signerName").toString(), kOtherSigner);
+        QCOMPARE(Keychain::shownName("x", "Keychain", {}), QStringLiteral("x"));
+        QCOMPARE(Keychain::shownName("x", "  ", {}), QStringLiteral("x"));
+        QCOMPARE(Keychain::shownName("x", "Wallet", { "Weekend" }), QStringLiteral("Wallet"));
+    }
+
+    void thePurposeIsTheKind()
+    {
+        // A key kept for transactions must never sign what both screens call
+        // a login, and the other way round.
+        QVariantMap loginAsTx = ask("login"); loginAsTx["purpose"] = QStringLiteral("transaction");
+        QVariantMap txAsLogin = ask("transaction"); txAsLogin["purpose"] = QStringLiteral("login");
+        QCOMPARE(m_broker->requestSignature(kRequester, loginAsTx).value("error").toString(), QStringLiteral("bad_request"));
+        QCOMPARE(m_broker->requestSignature(kRequester, txAsLogin).value("error").toString(), QStringLiteral("bad_request"));
+        QCOMPARE(m_broker->openCount(), 0);
+        QVariantMap same = ask("transaction"); same["purpose"] = QStringLiteral("transaction");
+        const QString id = m_broker->requestSignature(kRequester, same).value("requestId").toString();
+        QVERIFY(!id.isEmpty());
+        QCOMPARE(m_broker->requestForKeychain(id).value("purpose").toString(), QStringLiteral("transaction"));
+    }
+
+    void aKeySwappedUnderTheRequestFails()
+    {
+        // The user chose "daily" with public key D. The signer removes it and
+        // registers "daily" again with public key X, then signs with X: the
+        // key the user chose never signed, so nothing is passed on.
+        QSignalSpy results(m_broker, &KeychainBroker::signatureResult);
+        const QString id = open();
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        m_broker->signerReached(id);
+        QVERIFY(m_keys->removeKey(kSigner, "daily").value("ok").toBool());
+        QVERIFY(m_keys->registerKey(kSigner, keyRow("daily", 'x', { "login" })).value("ok").toBool());
+        const QByteArray byX = fakeSign(QByteArray(32, 'x'), kPayload);
+        QCOMPARE(m_broker->completeSignature(kSigner, id, b64(byX)), QStringLiteral("failed"));
+        const QVariantMap r = results.first().at(1).toMap();
+        QCOMPARE(r.value("error").toString(), QStringLiteral("key_changed"));
+        QVERIFY(!r.contains("signature"));
+        QVERIFY(!r.contains("publicKey"));
+        QVERIFY(!QJsonDocument::fromVariant(r).toJson().contains(byX.toBase64()));
+    }
+
+    void theResultCarriesTheKeyAsChosen()
+    {
+        // Renamed by its app while it signs: the requester hears the name and
+        // key the user chose by.
+        QSignalSpy results(m_broker, &KeychainBroker::signatureResult);
+        const QString id = open();
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        QVERIFY(m_keys->updateKey(kSigner, "daily", { { "name", "Renamed" } }).value("ok").toBool());
+        QCOMPARE(m_broker->completeSignature(kSigner, id, b64(fakeSign(QByteArray(32, 'd'), kPayload))),
+                 QStringLiteral("done"));
+        QCOMPARE(results.first().at(1).toMap().value("keyName").toString(), QStringLiteral("daily key"));
+        QCOMPARE(results.first().at(1).toMap().value("publicKey").toString(), b64(QByteArray(32, 'd')));
+    }
+
+    void theSheetNamesTheKeyByTheUsersLabel()
+    {
+        // The shell's Signed sheet says what the user chose ("LABEL-MARKER"),
+        // the requester's result never does.
+        QSignalSpy results(m_broker, &KeychainBroker::signatureResult);
+        QSignalSpy finished(m_broker, &KeychainBroker::requestFinished);
+        const QString id = open();
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        QCOMPARE(m_broker->completeSignature(kSigner, id, b64(fakeSign(QByteArray(32, 'd'), kPayload))),
+                 QStringLiteral("done"));
+        const QVariantMap s = finished.first().at(1).toMap();
+        QCOMPARE(s.value("keyLabel").toString(), QStringLiteral("LABEL-MARKER"));
+        QCOMPARE(s.value("keyName").toString(), QStringLiteral("daily key"));
+        QVERIFY(!QJsonDocument::fromVariant(results.first().at(1)).toJson().contains("LABEL-MARKER"));
+        // A key without a label: none.
+        QVERIFY(m_keys->setKeyLabel(kSigner, "daily", QString()));
+        const QString next = open();
+        QVERIFY(m_broker->chooseKey(next, kSigner, "daily"));
+        QVERIFY(m_broker->cancelByUser(next));
+        QVERIFY(!finished.last().at(1).toMap().contains("keyLabel"));
+    }
+
+    void aCancelledRequesterIsHeldOff()
+    {
+        // Cancel and ask again, in a loop, would keep pulling the Keychain
+        // over what the user is doing.
+        QSignalSpy opened(m_broker, &KeychainBroker::requestOpened);
+        QVERIFY(m_broker->cancelByRequester(kRequester, open()));
+        QCOMPARE(m_broker->requestSignature(kRequester, ask()).value("error").toString(), QStringLiteral("busy"));
+        m_now += KeychainBroker::kCooldownMs - 1;
+        QCOMPARE(m_broker->requestSignature(kRequester, ask()).value("error").toString(), QStringLiteral("busy"));
+        m_now += 1;
+        QString id = open();
+        QVERIFY(!id.isEmpty());
+        // The user's cancel, and a timeout, the same.
+        QVERIFY(m_broker->cancelByUser(id));
+        QCOMPARE(m_broker->requestSignature(kRequester, ask()).value("error").toString(), QStringLiteral("busy"));
+        later();
+        id = open();
+        m_now += KeychainBroker::kTimeoutMs;
+        m_broker->sweep();
+        QCOMPARE(m_broker->requestSignature(kRequester, ask()).value("error").toString(), QStringLiteral("busy"));
+        // Another app is not held off by it.
+        QVERIFY(!open(kStranger).isEmpty());
+        QCOMPARE(opened.count(), 4);
+    }
+
+    void atMostFiveAMinute()
+    {
+        // Even ending each one some other way (here: the signer says no).
+        QSignalSpy opened(m_broker, &KeychainBroker::requestOpened);
+        for (int i = 0; i < KeychainBroker::kMaxPerMinute; ++i) {
+            const QString id = open();
+            QVERIFY2(!id.isEmpty(), qPrintable(QString::number(i)));
+            QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+            QVERIFY(m_broker->rejectSignature(kSigner, id));
+            m_now += 1000;
+        }
+        QCOMPARE(m_broker->requestSignature(kRequester, ask()).value("error").toString(), QStringLiteral("busy"));
+        QCOMPARE(opened.count(), KeychainBroker::kMaxPerMinute);
+        m_now += 60 * 1000;
+        QVERIFY(!open().isEmpty());
+    }
+
+    void onlyTheAppInFrontMayAsk()
+    {
+        QString front = kRequester;
+        m_broker->setInFront([&front](const QString& app) { return app == front; });
+        QSignalSpy opened(m_broker, &KeychainBroker::requestOpened);
+        QCOMPARE(m_broker->requestSignature(kStranger, ask()).value("error").toString(), QStringLiteral("not_in_front"));
+        QCOMPARE(opened.count(), 0);
+        QCOMPARE(m_broker->openCount(), 0);
+        QVERIFY(!open().isEmpty());
+        QCOMPARE(opened.count(), 1);
+    }
+
+    void aQueuedRequestGetsItsFullFiveMinutes()
+    {
+        // B asks while the user is on A's request: its 5 minutes start when
+        // it is the one on screen, and both say how many are waiting.
+        QSignalSpy results(m_broker, &KeychainBroker::signatureResult);
+        QSignalSpy finished(m_broker, &KeychainBroker::requestFinished);
+        const QString a = open(kRequester);
+        m_now += 1000;
+        const QString b = open(kStranger);
+        QCOMPARE(m_broker->requestForKeychain(a).value("waiting").toInt(), 1);
+        m_now += 4 * 60 * 1000;
+        QVERIFY(m_broker->cancelByUser(a));
+        QCOMPARE(finished.last().at(1).toMap().value("waiting").toInt(), 1);
+        QCOMPARE(m_broker->requestForKeychain(b).value("waiting").toInt(), 0);
+        // 8 minutes after B asked, 4 on screen: still open.
+        m_now += 4 * 60 * 1000;
+        m_broker->sweep();
+        QCOMPARE(m_broker->stateFor(kStranger, b), QStringLiteral("pending"));
+        m_now += 60 * 1000;
+        m_broker->sweep();
+        QCOMPARE(m_broker->stateFor(kStranger, b), QString());
+        QCOMPARE(results.last().at(1).toMap().value("status").toString(), QStringLiteral("timedOut"));
+    }
+
+    void theWaitingViewCanOpenTheSigner()
+    {
+        const QString id = open();
+        QCOMPARE(m_broker->signerFor(id), QString());
+        QVERIFY(m_broker->chooseKey(id, kSigner, "daily"));
+        QCOMPARE(m_broker->signerFor(id), kSigner);
+        m_broker->signerReached(id);
+        QCOMPARE(m_broker->signerFor(id), kSigner);
+        QVERIFY(m_broker->cancelByUser(id));
+        QCOMPARE(m_broker->signerFor(id), QString());
+        QCOMPARE(m_broker->signerFor(QStringLiteral("made-up")), QString());
     }
 
     // ── The real verifier ───────────────────────────────────────────────

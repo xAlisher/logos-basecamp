@@ -63,12 +63,27 @@ public:
     // First and last 6 characters of the base64 public key.
     static QString fingerprint(const QByteArray& publicKey);
 
+    // Who the user is told an app is (basecamp-experiments#60). An app's
+    // display name is its own claim, so it is shown only when it is not
+    // somebody else's: not "Keychain" or "Basecamp" (reservedNames), and not
+    // one of `taken` (the names of the other installed apps and of the role
+    // holders). Compared on letters and digits, case folded, so "Key-chain"
+    // is "Keychain". Otherwise, or when empty, the module id the host
+    // attested. The id is shown next to the name everywhere anyway.
+    static const QStringList& reservedNames();
+    static QString shownName(const QString& app, const QString& displayName, const QStringList& taken);
+    // The same with this registry's view of the other apps' names.
+    QString shownName(const QString& app, const QString& displayName) const;
+
     explicit Keychain(QString filePath = QString(), QObject* parent = nullptr);
 
     // Who the host sees: the catalog source an installed app came from, and
     // its display name. Both read at the time of each call.
     void setSourceResolver(std::function<QString(const QString&)> fn) { m_sourceFor = std::move(fn); }
     void setNameResolver(std::function<QString(const QString&)> fn) { m_nameFor = std::move(fn); }
+    // The display names `app` may not use: every other installed app's and
+    // each role holder's (shownName). Read at the time of each call.
+    void setTakenNames(std::function<QStringList(const QString&)> fn) { m_takenFor = std::move(fn); }
     void setClock(std::function<qint64()> clock) { m_now = std::move(clock); }
 
     // ── For apps (`app` is the attested caller) ─────────────────────────
@@ -88,7 +103,7 @@ public:
 
     // ── For the keychain role (the caller checks the role) ──────────────
     // Every entry, label and note included, grouped by owner in registration
-    // order: { ownerApp, ownerName, keyId, name, label, note, publicKey,
+    // order (ownerName as shownName gives it): { ownerApp, ownerName, keyId, name, label, note, publicKey,
     // fingerprint, algorithm, purposes, added }.
     QVariantList allKeys() const;
     // "" clears. False for an unknown key or text over the limit (nothing is
@@ -124,5 +139,6 @@ private:
     QList<Key> m_keys;
     std::function<QString(const QString&)> m_sourceFor;
     std::function<QString(const QString&)> m_nameFor;
+    std::function<QStringList(const QString&)> m_takenFor;
     std::function<qint64()> m_now;
 };

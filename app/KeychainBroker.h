@@ -40,7 +40,16 @@ class QTimer;
 //  - the requester hears about the one key the user chose, and only on `done`;
 //  - only the app owning the chosen key can complete or reject the request;
 //  - the payload lives in memory only and is dropped when the request ends.
-//    Nothing here logs it, or the description.
+//    Nothing here logs it, or the description;
+//  - the key the user chose is the key that must sign: its public key is
+//    taken when it is chosen, and a registry entry swapped under the request
+//    ends it as failed (key_changed);
+//  - a request comes from the app in front, and an app that keeps asking is
+//    held off (busy): a pause after one it or the user cancelled or let time
+//    out, and at most kMaxPerMinute a minute, so nothing can keep pulling
+//    the Keychain over what the user is doing;
+//  - the 5 minutes run from when a request is the one on screen (the oldest
+//    open one), so one queued behind another still gets them all.
 //
 // QtCore only (the verifier is injected), so keychain_broker_test.cpp runs it
 // against fakes.
@@ -54,6 +63,9 @@ public:
     static constexpr int kMaxPayloadBytes = 32 * 1024;
     static constexpr int kMaxDescription = 120;
     static constexpr int kMaxReason = 120;
+    // After an ending the requester or the user caused, or a timeout.
+    static constexpr int kCooldownMs = 10 * 1000;
+    static constexpr int kMaxPerMinute = 5;
 
     using Verifier = std::function<bool(const QString& algorithm, const QByteArray& publicKey,
                                         const QByteArray& message, const QByteArray& signature)>;
@@ -68,10 +80,16 @@ public:
     // Whether anything holds the keychain role. Nothing can choose a key
     // without it, so a request is refused at once rather than left to time out.
     void setKeychainAvailable(std::function<bool()> fn) { m_hasKeychain = std::move(fn); }
+    // Whether `app` is the one the user is looking at. A request from any
+    // other is refused (not_in_front): it would bring the Keychain over
+    // whatever the user is doing. Unset, every app counts as in front.
+    void setInFront(std::function<bool(const QString&)> fn) { m_inFront = std::move(fn); }
 
     // ── Requester (`requester` is the attested caller) ──────────────────
     // `params`: { payload (base64), kind, description, algorithm?, purpose? }.
-    // { requestId } or { error }: bad_request | busy | unavailable.
+    // The kind is the purpose: a `purpose` other than `kind` is bad_request,
+    // or a key kept for one purpose could sign what both screens call another.
+    // { requestId } or { error }: bad_request | busy | unavailable | not_in_front.
     QVariantMap requestSignature(const QString& requester, const QVariantMap& params);
     // The requester's own open request (`requestId` "" = whichever it has).
     bool cancelByRequester(const QString& requester, const QString& requestId = QString());
@@ -82,9 +100,12 @@ public:
     // ── Keychain role (the caller checks the role) ──────────────────────
     QStringList openRequests() const;
     // What the Keychain shows: { requestId, state, requesterApp, requesterName,
-    // description, kind, algorithm, purpose, keys: [ … ], lastKey }, keys the
-    // registry's allKeys() rows that can sign this request; once a key is
-    // chosen also { signerApp, signerName, chosenKeyId }. {} when unknown.
+    // description, kind, algorithm, purpose, keys: [ … ], lastKey, waiting },
+    // keys the registry's allKeys() rows that can sign this request, waiting
+    // the number of other open requests; once a key is chosen also
+    // { signerApp, signerName, chosenKeyId }. {} when unknown. requesterName
+    // is Keychain::shownName's: the module id when the app's display name is
+    // somebody else's.
     QVariantMap requestForKeychain(const QString& requestId) const;
     // pending → keyChosen; then signerRequested asks the shell to hand it on.
     bool chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId);
@@ -93,6 +114,9 @@ public:
     // The Keychain app was closed: every request still waiting for a key ends
     // as cancelled (keychain_closed). One already with its signer goes on.
     int keychainClosed();
+    // The app holding the chosen key of an open request that is with its
+    // signer, for "Open <signer>"; "" otherwise.
+    QString signerFor(const QString& requestId) const;
 
     // ── The shell, about the hand-off ───────────────────────────────────
     void signerReached(const QString& requestId);     // keyChosen → signing
@@ -122,7 +146,8 @@ signals:
     // Something the Keychain draws changed (opened, chosen, ended).
     void requestsChanged();
     // Hand to `signerApp` (its keychain.sign intent): { requestId, keyId,
-    // payload, kind, requesterName, description }. Not the label, not the note.
+    // payload, kind, purpose, requesterApp, requesterName, description }.
+    // Not the label, not the note.
     void signerRequested(const QString& signerApp, const QVariantMap& envelope);
     // Ended while `signerApp` had it, by something other than its own answer.
     void requestEnded(const QString& signerApp, const QString& requestId, const QString& status);
@@ -131,7 +156,10 @@ signals:
     // the signer app's own name for the key, never the user's label).
     void signatureResult(const QString& requester, const QVariantMap& result);
     // The same ending as the shell shows it (the Signed / Not signed sheet):
-    // { requestId, status, error?, reason?, signerApp?, signerName?, keyName? }.
+    // { requestId, status, requesterApp, requesterName, error?, reason?,
+    // signerApp?, signerName?, keyName?, keyLabel?, waiting }. keyLabel is the user's label the key was chosen
+    // by: only here, for the shell's own sheet, never in signatureResult.
+    // waiting is how many other requests are still open.
     void requestFinished(const QString& requester, const QVariantMap& summary);
 
 private:
@@ -146,8 +174,16 @@ private:
         QByteArray payload;
         State state = State::Pending;
         qint64 created = 0;
+        // When it became the one on screen (the oldest open); its 5 minutes
+        // run from here. 0 while it waits behind another.
+        qint64 started = 0;
         QString ownerApp;   // the chosen key
         QString keyId;
+        // The chosen key as it was when chosen: what must sign.
+        QString keyAlgorithm;
+        QByteArray keyPublic;
+        QString keyName;
+        QString keyLabel;
     };
 
     bool matches(const Request& r, const QString& ownerApp, const QString& keyId) const;
@@ -158,13 +194,20 @@ private:
              const QString& reason = QString(), const QByteArray& signature = QByteArray());
     qint64 now() const;
     void armTimer();
+    // The oldest open request is on screen: start its clock if not yet.
+    void startHead();
+    // Held off: in its pause, or over kMaxPerMinute.
+    bool throttled(const QString& requester) const;
 
     Keychain* m_keys;
     Verifier m_verify;
     std::function<qint64()> m_now;
     std::function<QString(const QString&)> m_nameFor;
     std::function<bool()> m_hasKeychain;
+    std::function<bool(const QString&)> m_inFront;
     QHash<QString, Request> m_requests;              // open requests only
     QHash<QString, QPair<QString, QString>> m_lastKey; // requester -> (owner, keyId)
+    QHash<QString, qint64> m_pauseUntil;               // requester -> ms
+    QHash<QString, QList<qint64>> m_recent;            // requester -> starts in the last minute
     QTimer* m_timer = nullptr;
 };

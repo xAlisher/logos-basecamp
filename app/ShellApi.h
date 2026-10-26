@@ -234,6 +234,8 @@ public:
     // Continue with this key (it goes to its signer app), or Cancel.
     Q_INVOKABLE bool chooseKey(const QString& requestId, const QString& ownerApp, const QString& keyId);
     Q_INVOKABLE bool cancelSignatureRequest(const QString& requestId);
+    // Bring forward the signer app an open request is waiting for.
+    Q_INVOKABLE bool openSigner(const QString& requestId);
 
     // any role app: open whatever fills another role (navigation only).
     Q_INVOKABLE bool openRole(const QString& role);

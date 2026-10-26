@@ -76,10 +76,11 @@ inline const QString kObjectsActionIntent = QStringLiteral("objects.action");
 //   reject   { requestId, reason? }                            -> { ok }
 // Requesting apps:
 //   sign     { payload, kind, description, algorithm?, purpose? }
+//            (purpose, when given, must be the kind: bad_request otherwise)
 //            answered once the request ends, with signatureResult's map
 //            { requestId, status, signature?, publicKey?, keyId?, keyName?,
 //            signerApp?, error? }, or at once with { error } (bad_request, busy,
-//            unavailable). Held open meanwhile: a dispatch the shell is
+//            unavailable, not_in_front). Held open meanwhile: a dispatch the shell is
 //            handling has the broker's 10-minute backstop, above the
 //            Keychain's own 5-minute timeout.
 //   cancel   { requestId? }                                    -> { ok }
@@ -100,12 +101,22 @@ inline const QStringList kKeychainIntents = {
 
 // The shell to the signer app that owns the chosen key, and to it alone
 // (submitTo), like `objects.action`: `keychain.sign` { requestId, keyId,
-// payload, kind, requesterName, description }, answered `ok` once the signer
+// payload, kind, purpose, requesterApp, requesterName, description }, answered `ok` once the signer
 // shows it; `keychain.ended` { requestId, status } when the request ended
 // while it had it, for a reason other than its own answer. The signer
 // declares both in "provides"; the shell is their only permitted requester.
 inline const QString kKeychainSignerIntent = QStringLiteral("keychain.sign");
 inline const QString kKeychainEndedIntent  = QStringLiteral("keychain.ended");
+
+// An app's own data, kept by the host (AppDataStore.h): one JSON object per
+// app that no other app can read, which QML LocalStorage cannot promise
+// inside one process. The app is the attested caller. Answered `ok` with the
+// outcome in `data`, as the keychain intents:
+//   read  {}           -> { ok, data }
+//   write { data: {} } -> { ok, error? }   (bad_request, too_big, failed)
+inline const QString kAppDataReadIntent  = QStringLiteral("basecamp.appdata.read");
+inline const QString kAppDataWriteIntent = QStringLiteral("basecamp.appdata.write");
+inline const QStringList kAppDataIntents = { kAppDataReadIntent, kAppDataWriteIntent };
 
 // Bring a named app forward: `{ "app": "wallet_ui" }`.
 inline const QString kAppLaunchIntent = QStringLiteral("basecamp.apps.launch");

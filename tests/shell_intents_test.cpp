@@ -266,10 +266,10 @@ void TestShellIntents::testKeychainIntentsAreTheShellsAndNotNavigation()
 {
     // Answered in C++ with the attested caller (basecamp-experiments#55, #56).
     // None of them may skip the consent a navigation intent skips, and no web
-    // page may reach one.
+    // page may reach one. The same for an app's own data (AppDataStore).
     QObject owner;
     IntentRegistry* registry = freshRegistry(&owner);
-    for (const QString& intent : ShellIntents::kKeychainIntents) {
+    for (const QString& intent : ShellIntents::kKeychainIntents + ShellIntents::kAppDataIntents) {
         QVERIFY2(logos::intent::isValidName(intent), qPrintable(intent));
         const auto resolution = registry->resolve(intent);
         QVERIFY2(resolution.status == IntentRegistry::Ok, qPrintable(intent));

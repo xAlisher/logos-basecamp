@@ -71,6 +71,7 @@ Rectangle {
             if (!shell.chooseKey(root.requestId, ownerApp, keyId)) root.refreshRequest()
         }
         onCancelRequested: shell.cancelSignatureRequest(root.requestId)
+        onOpenSignerRequested: shell.openSigner(root.requestId)
     }
 
     Column {

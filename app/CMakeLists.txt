@@ -325,6 +325,7 @@ set(PROJECT_SOURCES
     Keychain.cpp
     KeychainBroker.cpp
     KeychainVerify.cpp
+    AppDataStore.cpp
 
     # Deep links: basecamp:// from a browser. LinkUrl.cpp is the parser and is
     # deliberately free of everything else, since it is the one part of this

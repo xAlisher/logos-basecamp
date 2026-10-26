@@ -269,6 +269,42 @@ QVariantList Keychain::myKeys(const QString& app) const
     return out;
 }
 
+const QStringList& Keychain::reservedNames()
+{
+    static const QStringList names = { QStringLiteral("Keychain"), QStringLiteral("Basecamp") };
+    return names;
+}
+
+namespace {
+
+// Letters and digits only, case folded: what two names are compared on.
+QString nameKey(const QString& name)
+{
+    QString out;
+    for (const QChar c : name)
+        if (c.isLetterOrNumber()) out.append(c);
+    return out.toCaseFolded();
+}
+
+} // namespace
+
+QString Keychain::shownName(const QString& app, const QString& displayName, const QStringList& taken)
+{
+    const QString name = displayName.trimmed();
+    const QString key = nameKey(name);
+    if (key.isEmpty()) return app;
+    for (const QString& t : reservedNames())
+        if (nameKey(t) == key) return app;
+    for (const QString& t : taken)
+        if (nameKey(t) == key) return app;
+    return name;
+}
+
+QString Keychain::shownName(const QString& app, const QString& displayName) const
+{
+    return shownName(app, displayName, m_takenFor ? m_takenFor(app) : QStringList());
+}
+
 QVariantList Keychain::allKeys() const
 {
     // Grouped by owner, owners in the order their first key arrived.
@@ -281,7 +317,7 @@ QVariantList Keychain::allKeys() const
             if (k.ownerApp != owner) continue;
             out.append(QVariantMap{
                 { QStringLiteral("ownerApp"), k.ownerApp },
-                { QStringLiteral("ownerName"), k.ownerName },
+                { QStringLiteral("ownerName"), shownName(k.ownerApp, k.ownerName) },
                 { QStringLiteral("keyId"), k.keyId },
                 { QStringLiteral("name"), k.name },
                 { QStringLiteral("label"), k.label },

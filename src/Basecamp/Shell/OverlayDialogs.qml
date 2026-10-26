@@ -165,6 +165,8 @@ Item {
     KeychainResultDialog {
         id: keychainResultDialog
         displayNameLookup: _dialogDeps.displayNameLookup
+        // Another app's request waited behind this one: back to Keychain.
+        onClosed: if (waiting > 0) backend.openRole("keychain")
     }
 
     ConfirmationDialog {

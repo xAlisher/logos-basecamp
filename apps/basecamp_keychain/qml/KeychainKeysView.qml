@@ -128,12 +128,28 @@ Item {
                             source: group.modelData.ownerIcon
                             fullBleed: group.modelData.ownerFullBleed
                         }
-                        LogosText {
+                        // Its name, and the module id the host attested: the
+                        // name is the app's claim, the id is not.
+                        Column {
                             anchors.verticalCenter: parent.verticalCenter
                             width: parent.width - 32 - Theme.spacing.medium
-                            elide: Text.ElideRight
-                            text: group.modelData.ownerName
-                            font.weight: Theme.typography.weightMedium
+                            LogosText {
+                                width: parent.width
+                                elide: Text.ElideRight
+                                textFormat: Text.PlainText
+                                text: group.modelData.ownerName
+                                font.weight: Theme.typography.weightMedium
+                            }
+                            LogosText {
+                                objectName: "basecampKeychain.owner." + group.modelData.ownerApp
+                                visible: group.modelData.ownerApp !== group.modelData.ownerName
+                                width: parent.width
+                                elide: Text.ElideMiddle
+                                textFormat: Text.PlainText
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                                text: qsTr("App id: %1").arg(group.modelData.ownerApp)
+                            }
                         }
                     }
 

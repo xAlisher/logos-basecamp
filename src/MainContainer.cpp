@@ -544,8 +544,12 @@ void MainContainer::setupUi()
             [this](QObject* root) {
                 connect(root, SIGNAL(finished()), this, SLOT(onOnboardingFinished()));
             });
-        if (m_tabArea)
+        if (m_tabArea) {
             m_tabArea->setLocked(true, tr("Setup"));
+            // The bar only has its height once the window is shown and laid
+            // out, which on a real screen comes without a later resize.
+            m_tabArea->installEventFilter(this);
+        }
         placeOnboarding();
     }
 
@@ -644,7 +648,7 @@ void MainContainer::placeOnboarding()
     // Tabs layout: setup is the current tab's page, so the bar and its
     // window buttons stay usable above it (the window is frameless).
     int top = 0;
-    if (m_tabArea && m_tabArea->isVisible())
+    if (m_tabArea)
         top = m_tabArea->mapTo(this, QPoint(0, 0)).y() + m_tabArea->topBarHeight();
     m_onboardingWidget->setGeometry(0, top, width(), height() - top);
     m_onboardingWidget->raise();
@@ -687,6 +691,10 @@ void MainContainer::onSidebarTooltipRequested(const QString& text, qreal y)
 
 bool MainContainer::eventFilter(QObject* watched, QEvent* event)
 {
+    if (watched == m_tabArea && m_onboardingWidget
+        && (event->type() == QEvent::Resize || event->type() == QEvent::Show
+            || event->type() == QEvent::LayoutRequest))
+        QTimer::singleShot(0, this, [this]() { placeOnboarding(); });
     if (m_tabsLayout && tabsEdgeResize(watched, event))
         return true;
     if (m_tabsLayout && event->type() == QEvent::KeyPress) {

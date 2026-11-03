@@ -537,6 +537,8 @@ void MainContainer::setupUi()
         m_onboardingWidget->setResizeMode(QQuickWidget::SizeRootObjectToView);
         m_onboardingWidget->setClearColor(bgColor);
         m_onboardingWidget->rootContext()->setContextProperty("backend", m_host->backendObject());
+        // The Parts page lists shells and saves the pick.
+        m_onboardingWidget->rootContext()->setContextProperty("shellPrefs", m_prefs);
         ShellDevQml::load(m_onboardingWidget,
             QUrl(QStringLiteral("qrc:/qt/qml/Basecamp/Shell/Basecamp/Shell/OnboardingShell.qml")),
             [this](QObject* root) {

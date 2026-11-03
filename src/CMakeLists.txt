@@ -177,6 +177,12 @@ qt_add_qml_module(basecamp_shell_qml
         Basecamp/Shell/OnboardingDownloadsStep.qml
         Basecamp/Shell/OnboardingStorageStep.qml
         Basecamp/Shell/OnboardingStepPage.qml
+        Basecamp/Shell/OnboardingAppsStep.qml
+        Basecamp/Shell/OnboardingRunsStep.qml
+        Basecamp/Shell/OnboardingPartsStep.qml
+        Basecamp/Shell/OnboardingReadyStep.qml
+        Basecamp/Shell/OnboardingQuickStartSheet.qml
+        Basecamp/Shell/OnboardingDefaults.js
 )
 
 # The object cards (SHELL-OBJECTS-SPEC §7): one look per type, shared by every

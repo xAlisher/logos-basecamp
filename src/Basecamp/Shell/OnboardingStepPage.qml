@@ -21,6 +21,7 @@ Item {
     property string advanceHint: ""
     // A second way forward beside the advance button, e.g. Retry. Hidden when empty.
     property string secondaryText: ""
+    property string subtitle: qsTr("Custom setup: choose what Basecamp installs, runs and looks like.")
 
     // The step itself, filling the space between the rail and the footer.
     default property alias content: contentArea.data
@@ -47,7 +48,9 @@ Item {
             }
 
             LogosText {
-                text: qsTr("Advanced setup: choose how Basecamp downloads apps.")
+                text: root.subtitle
+                Layout.fillWidth: true
+                wrapMode: Text.WordWrap
                 color: Theme.palette.textSecondary
                 font.pixelSize: Theme.typography.secondaryText
             }

@@ -10,6 +10,7 @@ LogosFrame {
     property string title: ""
     property string description: ""
     property string badge: ""
+    property color badgeColor: Theme.palette.success
     property bool selected: false
     property bool multi: false
 
@@ -49,7 +50,7 @@ LogosFrame {
                     LogosBadge {
                         visible: root.badge.length > 0
                         text: root.badge
-                        color: Theme.palette.success
+                        color: root.badgeColor
                     }
 
                     Item { Layout.fillWidth: true }

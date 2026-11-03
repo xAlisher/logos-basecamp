@@ -1770,6 +1770,10 @@ void TabArea::setLocked(bool on, const QString& title)
     m_locked = on;
     m_plus->setVisible(!on);
     m_tabs->setEnabled(!on);
+    // Setup's tab can't be closed, so it shows no close button.
+    for (int i = 0; i < m_tabs->count(); ++i)
+        if (QWidget* b = m_tabs->tabButton(i, QTabBar::RightSide))
+            b->setVisible(!on);
     if (on && m_switcherOpen)
         showSwitcher(false);
     const QString key = currentKey();

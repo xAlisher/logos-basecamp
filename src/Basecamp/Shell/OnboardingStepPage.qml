@@ -105,6 +105,9 @@ Item {
             Layout.fillWidth: true
             Layout.fillHeight: true
             contentWidth: availableWidth
+            // The content Item sets only `height`; without this the view
+            // reads its implicit height (0) and a long step can't scroll.
+            contentHeight: contentArea.height
 
             Item {
                 id: contentArea

@@ -544,7 +544,9 @@ void MainContainer::setupUi()
             [this](QObject* root) {
                 connect(root, SIGNAL(finished()), this, SLOT(onOnboardingFinished()));
             });
-        m_onboardingWidget->raise();
+        if (m_tabArea)
+            m_tabArea->setLocked(true, tr("Setup"));
+        placeOnboarding();
     }
 
     // Watch for the mouse leaving the sidebar so we can hide the tooltip
@@ -573,10 +575,7 @@ void MainContainer::resizeEvent(QResizeEvent* event)
     positionDock();
     positionNotifications();
     positionHomeOverlay();
-    if (m_onboardingWidget) {
-        m_onboardingWidget->setGeometry(0, 0, width(), height());
-        m_onboardingWidget->raise();
-    }
+    placeOnboarding();
     if (m_offlineToast && !m_offlineToast->isHidden()) placeOfflineToast();
     if (m_overlayWidget) {
         m_overlayWidget->setGeometry(0, 0, width(), height());
@@ -639,11 +638,26 @@ void MainContainer::maskOfflineToast()
     m_offlineToast->setMask(QRegion(r.toAlignedRect()));
 }
 
+void MainContainer::placeOnboarding()
+{
+    if (!m_onboardingWidget) return;
+    // Tabs layout: setup is the current tab's page, so the bar and its
+    // window buttons stay usable above it (the window is frameless).
+    int top = 0;
+    if (m_tabArea && m_tabArea->isVisible())
+        top = m_tabArea->mapTo(this, QPoint(0, 0)).y() + m_tabArea->topBarHeight();
+    m_onboardingWidget->setGeometry(0, top, width(), height() - top);
+    m_onboardingWidget->raise();
+}
+
 void MainContainer::onOnboardingFinished()
 {
     if (!m_onboardingWidget) return;
     m_onboardingWidget->hide();
     m_onboardingWidget->deleteLater();
+    m_onboardingWidget = nullptr;
+    if (m_tabArea)
+        m_tabArea->setLocked(false);
 }
 
 void MainContainer::onOverlayActiveChanged(bool active)
@@ -1806,7 +1820,7 @@ bool MainContainer::tabsEdgeResize(QObject* watched, QEvent* event)
 
 bool MainContainer::tabsKey(QKeyEvent* e)
 {
-    if (!m_tabArea || !isVisible())
+    if (!m_tabArea || !isVisible() || m_tabArea->isLocked())
         return false;
     const auto mods = e->modifiers() & (Qt::ControlModifier | Qt::ShiftModifier | Qt::AltModifier | Qt::MetaModifier);
     const int key = e->key();

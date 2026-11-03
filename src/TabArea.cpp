@@ -1049,6 +1049,8 @@ void TabArea::updateCompactBar()
 
 void TabArea::showSwitcher(bool on)
 {
+    if (on && m_locked)
+        return;
     if (on && !m_compact)
         return;
     if (on == m_switcherOpen) {
@@ -1194,6 +1196,8 @@ int TabArea::indexOf(const QString& key) const
 
 QString TabArea::addNewTab()
 {
+    if (m_locked)
+        return currentKey();
     const QString key = QStringLiteral("new:%1").arg(++m_newCounter);
     const int i = m_tabs->addTab(QString());
     m_tabs->setTabData(i, key);
@@ -1533,6 +1537,8 @@ void TabArea::applyAttention()
 
 void TabArea::openHome()
 {
+    if (m_locked)
+        return;
     if (m_switcherOpen)
         showSwitcher(false);
     const QString current = currentKey();
@@ -1754,4 +1760,18 @@ void TabArea::setHomePlaceholder(const QString& text)
     if (!m_pillSearch) return;
     m_pillSearch->setPlaceholderText(text.isEmpty() ? tr("Search apps…") : text);
     m_pillSearch->setAccessibleName(text.isEmpty() ? tr("Search apps") : text);
+}
+
+void TabArea::setLocked(bool on, const QString& title)
+{
+    m_locked = on;
+    m_plus->setEnabled(!on);
+    m_tabs->setEnabled(!on);
+    if (on && m_switcherOpen)
+        showSwitcher(false);
+    const QString key = currentKey();
+    if (!key.isEmpty() && !title.isEmpty())
+        setTitle(key, title);
+    else if (!on && isNewTabKey(key))
+        setTitle(key, tr("Basecamp"));
 }

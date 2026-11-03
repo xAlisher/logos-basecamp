@@ -92,6 +92,11 @@ public:
     // Open tabs, not counting New tabs.
     int contentTabCount() const;
     void closeAllTabs();
+    // First-run setup: the current tab shows setup, titled
+    // `title`, and no tab can be opened, switched or closed until unlocked.
+    // The window buttons keep working.
+    void setLocked(bool on, const QString& title = QString());
+    bool isLocked() const { return m_locked; }
 
 signals:
     void closeRequested(const QString& key);
@@ -121,6 +126,7 @@ private:
 
     QWidget* m_bar = nullptr;
     QToolButton* m_plus = nullptr;
+    bool m_locked = false;
     TabStrip* m_tabs = nullptr;
     QWidget* m_drag = nullptr;
     QWidget* m_buttons = nullptr;

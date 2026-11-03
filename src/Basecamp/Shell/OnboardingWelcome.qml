@@ -39,13 +39,28 @@ Item {
 
         Item {
             width: scroll.availableWidth
-            height: Math.max(scroll.availableHeight, column.implicitHeight + 2 * Theme.spacing.xlarge)
+            height: Math.max(scroll.availableHeight, panel.height + 2 * Theme.spacing.large)
+
+            // One grey, see-through panel behind everything on the page.
+            Rectangle {
+                id: panel
+                objectName: "onboardingWelcomePanel"
+                readonly property real pad: root.width < 600 ? Theme.spacing.large : Theme.spacing.xlarge
+                anchors.centerIn: parent
+                width: column.width + 2 * pad
+                height: column.implicitHeight + 2 * pad
+                radius: Theme.spacing.radiusLarge
+                color: Qt.rgba(Theme.palette.backgroundSecondary.r, Theme.palette.backgroundSecondary.g,
+                               Theme.palette.backgroundSecondary.b, 0.72)
+                border.width: 1
+                border.color: Theme.palette.border
+            }
 
             ColumnLayout {
                 id: column
                 objectName: "onboardingWelcomeColumn"
                 anchors.centerIn: parent
-                width: Math.min(parent.width - 2 * Theme.spacing.large, 560)
+                width: Math.min(parent.width - 4 * Theme.spacing.large, 560)
                 spacing: Theme.spacing.medium
 
                 Image {
@@ -79,50 +94,45 @@ Item {
                     wrapMode: Text.WordWrap
                 }
 
-                LogosFrame {
+                // The three pillars, plain on the panel.
+                ColumnLayout {
                     Layout.fillWidth: true
                     Layout.topMargin: Theme.spacing.medium
-                    radius: Theme.spacing.radiusLarge
-                    backgroundColor: Theme.palette.surfaceRaised
-                    borderColor: Theme.palette.border
+                    spacing: Theme.spacing.medium
 
-                    contentItem: ColumnLayout {
-                        spacing: Theme.spacing.medium
+                    Repeater {
+                        model: [
+                            { key: "local", title: qsTr("Local-first"),
+                              text: qsTr("Your keys, data and activity stay on this machine. You are the infrastructure.") },
+                            { key: "p2p", title: qsTr("Peer-to-peer"),
+                              text: qsTr("Apps connect to other people directly, not through a server.") },
+                            { key: "modular", title: qsTr("Modular"),
+                              text: qsTr("Every part of Basecamp can be replaced: the apps, the search, even the shell you're looking at. Pick what you like, or build your own.") }
+                        ].filter(p => p.key !== "modular" || root.modular)
 
-                        Repeater {
-                            model: [
-                                { key: "local", title: qsTr("Local-first"),
-                                  text: qsTr("Your keys, data and activity stay on this machine. You are the infrastructure.") },
-                                { key: "p2p", title: qsTr("Peer-to-peer"),
-                                  text: qsTr("Apps connect to other people directly, not through a server.") },
-                                { key: "modular", title: qsTr("Modular"),
-                                  text: qsTr("Every part of Basecamp can be replaced: the apps, the search, even the shell you're looking at. Pick what you like, or build your own.") }
-                            ].filter(p => p.key !== "modular" || root.modular)
+                        delegate: ColumnLayout {
+                            id: pillar
+                            required property var modelData
+                            objectName: "onboardingPillar." + pillar.modelData.key
+                            Layout.fillWidth: true
+                            spacing: 2
 
-                            delegate: ColumnLayout {
-                                id: pillar
-                                required property var modelData
-                                objectName: "onboardingPillar." + pillar.modelData.key
+                            LogosText {
+                                text: pillar.modelData.title
+                                color: Theme.palette.text
+                                font.pixelSize: Theme.typography.primaryText
+                                font.weight: Theme.typography.weightBold
+                            }
+                            LogosText {
                                 Layout.fillWidth: true
-                                spacing: 2
-
-                                LogosText {
-                                    text: pillar.modelData.title
-                                    color: Theme.palette.text
-                                    font.pixelSize: Theme.typography.primaryText
-                                    font.weight: Theme.typography.weightBold
-                                }
-                                LogosText {
-                                    Layout.fillWidth: true
-                                    text: pillar.modelData.text
-                                    color: Theme.palette.textSecondary
-                                    font.pixelSize: Theme.typography.secondaryText
-                                    wrapMode: Text.WordWrap
-                                }
+                                text: pillar.modelData.text
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                                wrapMode: Text.WordWrap
                             }
                         }
                     }
-                }
+                    }
 
                 LogosText {
                     objectName: "onboardingTestnetNote"

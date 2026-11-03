@@ -106,6 +106,8 @@ private slots:
     void onNotificationsChanged();
     void onNotifyLayerResized();
     void onOnboardingFinished();
+    // Setup covers the window, or in the tabs layout the area under the tab bar.
+    void placeOnboarding();
     void onOnlineChanged();
     void closeOfflineToast();
     void updateOfflineToast();

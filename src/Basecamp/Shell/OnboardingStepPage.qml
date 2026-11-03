@@ -30,10 +30,13 @@ Item {
     signal advanceRequested()
     signal secondaryRequested()
 
+    // Phone widths: smaller margins, and the footer stacks (see below).
+    readonly property bool narrow: width < 600
+
     ColumnLayout {
         anchors.fill: parent
         // The page is the whole window, not a view inside Basecamp's chrome.
-        anchors.margins: Theme.spacing.xxlarge
+        anchors.margins: root.narrow ? Theme.spacing.large : Theme.spacing.xxlarge
         spacing: Theme.spacing.large
 
         ColumnLayout {
@@ -111,7 +114,9 @@ Item {
             }
         }
 
+        // Wide: Back on the left, the way forward on the right.
         RowLayout {
+            visible: !root.narrow
             Layout.fillWidth: true
             spacing: Theme.spacing.medium
 
@@ -148,6 +153,55 @@ Item {
                 enabled: root.canAdvance
                 text: root.advanceText
                 onClicked: root.advanceRequested()
+            }
+        }
+
+        // Narrow: the way forward full width, Back and the second action below.
+        ColumnLayout {
+            visible: root.narrow
+            Layout.fillWidth: true
+            spacing: Theme.spacing.small
+
+            LogosText {
+                visible: root.advanceHint.length > 0
+                Layout.fillWidth: true
+                text: root.advanceHint
+                color: Theme.palette.textTertiary
+                font.pixelSize: Theme.typography.secondaryText
+                wrapMode: Text.WordWrap
+            }
+
+            LogosButton {
+                objectName: root.objectPrefix + "AdvanceButton"
+                variant: LogosButton.Variant.Primary
+                Layout.fillWidth: true
+                Layout.preferredHeight: 48
+                enabled: root.canAdvance
+                text: root.advanceText
+                onClicked: root.advanceRequested()
+            }
+
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: Theme.spacing.small
+
+                LogosButton {
+                    objectName: root.objectPrefix + "BackButton"
+                    visible: root.canGoBack
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 44
+                    text: qsTr("Back")
+                    onClicked: root.backRequested()
+                }
+
+                LogosButton {
+                    objectName: root.objectPrefix + "SecondaryButton"
+                    visible: root.secondaryText.length > 0
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 44
+                    text: root.secondaryText
+                    onClicked: root.secondaryRequested()
+                }
             }
         }
     }

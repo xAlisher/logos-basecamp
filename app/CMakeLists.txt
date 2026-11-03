@@ -345,6 +345,7 @@ set(PROJECT_SOURCES
     CoreDependencyLoader.cpp
     RecentlyClosedStore.cpp
     HomeSettingsStore.cpp
+    OnboardingState.cpp
     UIPluginManager.cpp
     PackageCoordinator.cpp
     RepositorySource.cpp

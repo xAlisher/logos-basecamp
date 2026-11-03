@@ -224,6 +224,22 @@ QVariant AppsModel::data(const QModelIndex& index, int role) const
         InstallRegistry* reg = registryFor(r);
         return reg ? reg->planStage(r.name) : static_cast<int>(InstallStage::None);
     }
+    case DownloadTransportRole: {
+        InstallRegistry* reg = registryFor(r);
+        return reg ? reg->downloadTransport(r.name) : QString();
+    }
+    case DownloadFellBackRole: {
+        InstallRegistry* reg = registryFor(r);
+        return reg && reg->downloadFellBack(r.name);
+    }
+    case PlanDownloadTransportRole: {
+        InstallRegistry* reg = registryFor(r);
+        return reg ? reg->planDownloadTransport(r.name) : QString();
+    }
+    case PlanDownloadFellBackRole: {
+        InstallRegistry* reg = registryFor(r);
+        return reg && reg->planDownloadFellBack(r.name);
+    }
     case HasInstallableVersionRole: return r.hasInstallableVersion;
     case NotAvailableReasonRole:    return r.notAvailableReason;
     }
@@ -245,6 +261,10 @@ QHash<int, QByteArray> AppsModel::roleNames() const
         {DependenciesRole,     "dependencies"},
         {ProvidesRole,         "provides"},
         {WebProvidesRole,      "webProvides"},
+        {DownloadTransportRole,     "downloadTransport"},
+        {DownloadFellBackRole,      "downloadFellBack"},
+        {PlanDownloadTransportRole, "planDownloadTransport"},
+        {PlanDownloadFellBackRole,  "planDownloadFellBack"},
         {InstalledVersionRole, "installedVersion"},
         {LatestVersionRole,    "latestVersion"},
         {HasUpdateRole,        "hasUpdate"},
@@ -812,7 +832,9 @@ void AppsModel::setInstallRegistry(InstallRegistry* installRegistry)
             [this](const QString& name) {
                 const QList<int> roles{DownloadReceivedRole, DownloadTotalRole,
                                        PlanDownloadReceivedRole, PlanDownloadTotalRole,
-                                       PlanInstallStageRole};
+                                       PlanInstallStageRole,
+                                       DownloadTransportRole, DownloadFellBackRole,
+                                       PlanDownloadTransportRole, PlanDownloadFellBackRole};
                 for (int idx : m_indicesByName.values(name)) {
                     const QModelIndex mi = index(idx);
                     emit dataChanged(mi, mi, roles);

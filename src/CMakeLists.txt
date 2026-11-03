@@ -169,6 +169,14 @@ qt_add_qml_module(basecamp_shell_qml
         Basecamp/Shell/DockPanel.qml
         Basecamp/Shell/HomeOverlay.qml
         Basecamp/Shell/NotificationLayer.qml
+        Basecamp/Shell/OnboardingShell.qml
+        Basecamp/Shell/OfflineToast.qml
+        Basecamp/Shell/OnboardingView.qml
+        Basecamp/Shell/OnboardingWelcome.qml
+        Basecamp/Shell/OnboardingChoiceCard.qml
+        Basecamp/Shell/OnboardingDownloadsStep.qml
+        Basecamp/Shell/OnboardingStorageStep.qml
+        Basecamp/Shell/OnboardingStepPage.qml
 )
 
 # The object cards (SHELL-OBJECTS-SPEC §7): one look per type, shared by every

@@ -64,11 +64,15 @@ ColumnLayout {
             }))
         }
 
+        // The installed and bundled shells, then the host's built-in one
+        // ("" = Basecamp Legacy, ShellChoice).
         function shellOptions() {
             if (!root.prefs || !root.prefs.shellPackages) return []
-            return root.prefs.shellPackages.map(s => ({
+            const list = root.prefs.shellPackages.map(s => ({
                 id: s.id, name: s.name + (s.author ? " · " + qsTr("by %1").arg(s.author) : "")
             }))
+            list.push({ id: "", name: qsTr("Basecamp Legacy · by Logos") })
+            return list
         }
 
         function roleOptions(role) {
@@ -82,7 +86,10 @@ ColumnLayout {
 
         // The rows, in order: shell and theme first, then the roles.
         readonly property var rows: {
-            root.roles   // re-read when roles change hands
+            // Re-read when roles change hands, and when the page shows: app
+            // names load after setup first draws.
+            root.roles
+            root.visible
             const out = []
             const shells = shellOptions()
             if (shells.length > 0)
@@ -137,15 +144,18 @@ ColumnLayout {
             contentItem: ColumnLayout {
                 spacing: Theme.spacing.small
 
+                // Wide: name, picker, Upload and Build your own on one line.
+                // Narrow: the name above, the picker, then the two actions.
                 GridLayout {
+                    id: rowGrid
+                    readonly property bool wide: root.width >= 720
                     Layout.fillWidth: true
-                    // Narrow windows stack the name above the picker.
-                    columns: root.width < 520 ? 1 : 2
+                    columns: wide ? 4 : 1
                     columnSpacing: Theme.spacing.medium
                     rowSpacing: Theme.spacing.small
 
                     LogosText {
-                        Layout.preferredWidth: 120
+                        Layout.preferredWidth: rowGrid.wide ? 120 : -1
                         text: row.modelData.label
                         color: Theme.palette.text
                         font.pixelSize: Theme.typography.primaryText
@@ -161,6 +171,34 @@ ColumnLayout {
                         currentIndex: row.modelData.options.findIndex(o => o.id === row.chosen)
                         onActivated: index => root.pick(row.modelData.part, row.modelData.options[index].id)
                     }
+
+                    RowLayout {
+                        Layout.columnSpan: rowGrid.wide ? 2 : 1
+                        Layout.fillWidth: !rowGrid.wide
+                        spacing: Theme.spacing.medium
+
+                        LogosButton {
+                            objectName: "onboardingPart." + row.modelData.part + ".upload"
+                            text: qsTr("Upload…")
+                            onClicked: root.upload(row.modelData)
+                        }
+
+                        Item { Layout.fillWidth: true; visible: !rowGrid.wide }
+
+                        RowLayout {
+                            spacing: 2
+                            LogosText {
+                                text: qsTr("Build your own")
+                                color: Theme.palette.textSecondary
+                                font.pixelSize: Theme.typography.secondaryText
+                            }
+                            LogosCopyButton {
+                                objectName: "onboardingPart." + row.modelData.part + ".docs"
+                                value: row.modelData.docs
+                                feedbackText: qsTr("Link copied")
+                            }
+                        }
+                    }
                 }
 
                 LogosText {
@@ -170,31 +208,6 @@ ColumnLayout {
                            ? Theme.palette.warning : Theme.palette.textSecondary
                     font.pixelSize: Theme.typography.secondaryText
                     wrapMode: Text.WordWrap
-                }
-
-                RowLayout {
-                    Layout.fillWidth: true
-                    spacing: Theme.spacing.medium
-
-                    LogosButton {
-                        objectName: "onboardingPart." + row.modelData.part + ".upload"
-                        text: qsTr("Upload…")
-                        onClicked: root.upload(row.modelData)
-                    }
-
-                    Item { Layout.fillWidth: true }
-
-                    LogosText {
-                        text: qsTr("Build your own")
-                        color: Theme.palette.textSecondary
-                        font.pixelSize: Theme.typography.secondaryText
-                    }
-
-                    LogosCopyButton {
-                        objectName: "onboardingPart." + row.modelData.part + ".docs"
-                        value: row.modelData.docs
-                        feedbackText: qsTr("Link copied")
-                    }
                 }
             }
         }

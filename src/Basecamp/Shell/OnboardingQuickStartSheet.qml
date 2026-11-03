@@ -26,16 +26,17 @@ Rectangle {
         onClicked: root.closeRequested()
     }
 
+    // Clicks on the sheet stay on the sheet.
+    MouseArea { anchors.fill: sheet }
+
     LogosFrame {
+        id: sheet
         objectName: "onboardingQuickStartSheet"
         anchors.centerIn: parent
         width: Math.min(root.width - 2 * Theme.spacing.large, 480)
         radius: Theme.spacing.radiusLarge
         backgroundColor: Theme.palette.surfaceRaised
         borderColor: Theme.palette.border
-
-        // Clicks on the sheet stay on the sheet.
-        MouseArea { anchors.fill: parent }
 
         contentItem: ColumnLayout {
             spacing: Theme.spacing.medium

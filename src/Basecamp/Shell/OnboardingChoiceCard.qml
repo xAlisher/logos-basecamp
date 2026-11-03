@@ -13,6 +13,8 @@ LogosFrame {
     property color badgeColor: Theme.palette.success
     property bool selected: false
     property bool multi: false
+    // Off for a card that is a link, not a choice.
+    property bool showIndicator: true
 
     signal picked()
 
@@ -69,14 +71,14 @@ LogosFrame {
             LogosRadioButton {
                 objectName: "choiceIndicator"
                 Layout.alignment: Qt.AlignVCenter
-                visible: !root.multi
+                visible: root.showIndicator && !root.multi
                 checked: root.selected
             }
 
             LogosCheckbox {
                 objectName: "choiceCheckbox"
                 Layout.alignment: Qt.AlignVCenter
-                visible: root.multi
+                visible: root.showIndicator && root.multi
                 checked: root.selected
             }
         }

@@ -49,6 +49,9 @@ ColumnLayout {
         id: storageStep
         objectName: "onboardingStorageStep"
         Layout.fillWidth: true
+        // Its own trailing spacer would push What's next to the bottom.
+        Layout.fillHeight: false
+        Layout.preferredHeight: implicitHeight
         visible: root.storage
         source: root.source
         storageState: root.storageState
@@ -101,6 +104,7 @@ ColumnLayout {
 
         OnboardingChoiceCard {
             objectName: "onboardingNextApps"
+            showIndicator: false
             Layout.fillHeight: true
             Layout.preferredWidth: 1
             title: qsTr("Explore apps")
@@ -110,6 +114,7 @@ ColumnLayout {
 
         OnboardingChoiceCard {
             objectName: "onboardingNextNode"
+            showIndicator: false
             visible: !root.blockchain
             Layout.fillHeight: true
             Layout.preferredWidth: 1

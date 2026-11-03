@@ -1764,8 +1764,11 @@ void TabArea::setHomePlaceholder(const QString& text)
 
 void TabArea::setLocked(bool on, const QString& title)
 {
+    // Setup needs a tab to be the page of, before anything else opens one.
+    if (on && m_tabs->count() == 0)
+        addNewTab();
     m_locked = on;
-    m_plus->setEnabled(!on);
+    m_plus->setVisible(!on);
     m_tabs->setEnabled(!on);
     if (on && m_switcherOpen)
         showSwitcher(false);

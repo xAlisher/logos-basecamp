@@ -98,6 +98,9 @@ ColumnLayout {
 
     GridLayout {
         Layout.fillWidth: true
+        // The cards fill their row's height, not the page's.
+        Layout.fillHeight: false
+        Layout.preferredHeight: implicitHeight
         columns: root.width < 640 ? 1 : 3
         columnSpacing: Theme.spacing.medium
         rowSpacing: Theme.spacing.medium
